@@ -2,20 +2,17 @@ package main
 
 import (
 	"log"
-	"os"
 
+	"github.com/RyanT04/TradeGo/internal/config"
 	"github.com/RyanT04/TradeGo/internal/server"
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	cfg := config.Load()
 
-	srv := server.New(port)
+	srv := server.New(cfg)
 
-	log.Printf("TradeGo server starting on :%s", port)
+	log.Printf("TradeGo server starting on :%s", cfg.Port)
 	if err := srv.Start(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
