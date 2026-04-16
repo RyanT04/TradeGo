@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/RyanT04/TradeGo/internal/auth"
 	"github.com/RyanT04/TradeGo/internal/config"
 	"github.com/RyanT04/TradeGo/internal/database"
 	"github.com/RyanT04/TradeGo/internal/handler"
@@ -38,25 +39,38 @@ func New(cfg *config.Config) *Server {
 	}
 	log.Println("Connected to PostgreSQL")
 
-	// Start Bybit WebSocket client
+	// Initialize services
+	jwtService := auth.NewJWTService(cfg.JWTSecret)
 	bybit := market.NewBybitClient()
 	bybit.Connect(defaultSymbols)
 
+	// Initialize handlers
 	marketHandler := handler.NewMarketHandler(bybit)
+	authHandler := handler.NewAuthHandler(db, jwtService)
 
 	s := &Server{
 		port:   cfg.Port,
 		router: r,
 		db:     db,
 	}
-	s.routes(marketHandler)
+	s.routes(marketHandler, authHandler, jwtService)
 	return s
 }
 
-func (s *Server) routes(mh *handler.MarketHandler) {
+func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, jwtService *auth.JWTService) {
 	s.router.GET("/health", handler.NewHealthHandler(s.db))
 	s.router.GET("/ticker", mh.GetTicker)
 	s.router.GET("/tickers", mh.GetAllTickers)
+
+	s.router.POST("/auth/register", ah.Register)
+	s.router.POST("/auth/login", ah.Login)
+
+	// Protected routes
+	protected := s.router.Group("/")
+	protected.Use(auth.AuthMiddleware(jwtService))
+	{
+		protected.GET("/auth/me", ah.Me)
+	}
 }
 
 func (s *Server) Start() error {
