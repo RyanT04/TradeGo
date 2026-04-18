@@ -10,6 +10,7 @@ import (
 	"github.com/RyanT04/TradeGo/internal/database"
 	"github.com/RyanT04/TradeGo/internal/handler"
 	"github.com/RyanT04/TradeGo/internal/market"
+	"github.com/RyanT04/TradeGo/internal/matching"
 	"github.com/RyanT04/TradeGo/internal/middleware"
 )
 
@@ -44,20 +45,24 @@ func New(cfg *config.Config) *Server {
 	bybit := market.NewBybitClient()
 	bybit.Connect(defaultSymbols)
 
+	// Initialize matching engine
+	engine := matching.NewEngine(db, bybit)
+
 	// Initialize handlers
 	marketHandler := handler.NewMarketHandler(bybit)
 	authHandler := handler.NewAuthHandler(db, jwtService)
+	orderHandler := handler.NewOrderHandler(db, engine)
 
 	s := &Server{
 		port:   cfg.Port,
 		router: r,
 		db:     db,
 	}
-	s.routes(marketHandler, authHandler, jwtService)
+	s.routes(marketHandler, authHandler, orderHandler, jwtService)
 	return s
 }
 
-func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, jwtService *auth.JWTService) {
+func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *handler.OrderHandler, jwtService *auth.JWTService) {
 	s.router.GET("/health", handler.NewHealthHandler(s.db))
 	s.router.GET("/ticker", mh.GetTicker)
 	s.router.GET("/tickers", mh.GetAllTickers)
@@ -70,6 +75,10 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, jwtS
 	protected.Use(auth.AuthMiddleware(jwtService))
 	{
 		protected.GET("/auth/me", ah.Me)
+		protected.POST("/order", oh.PlaceOrder)
+		protected.GET("/orders", oh.GetOrders)
+		protected.GET("/holdings", oh.GetHoldings)
+		protected.GET("/balance", oh.GetBalance)
 	}
 }
 
