@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { setToken, clearToken, login, register, getTickers, getBalance, getHoldings, placeOrder } from './api'
+import axios from 'axios'
 
 interface Ticker {
   symbol: string
   lastPrice: string
   price24hPcnt: string
+  highPrice24h: string
+  lowPrice24h: string
   volume24h: string
 }
 
@@ -24,6 +27,178 @@ interface TradeLog {
   timestamp: string
 }
 
+const INTERVALS = [
+  { label: '1m', value: '1' },
+  { label: '5m', value: '5' },
+  { label: '15m', value: '15' },
+  { label: '1H', value: '60' },
+  { label: '4H', value: '240' },
+  { label: '1D', value: 'D' },
+]
+
+function formatNum(n: number, decimals = 2) {
+  if (n >= 1000) return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  if (n >= 1) return n.toFixed(4)
+  return n.toFixed(6)
+}
+
+// ── Auth Screen ──
+function AuthScreen({ onLogin }: { onLogin: (token: string) => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [isRegister, setIsRegister] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    try {
+      const data = isRegister
+        ? await register(email, password, name)
+        : await login(email, password)
+      onLogin(data.token)
+    } catch {
+      setError(isRegister ? 'Registration failed' : 'Invalid credentials')
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
+          <p className="text-gray-500 text-sm mt-2">High-performance crypto trading simulator</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {isRegister && (
+            <input type="text" placeholder="Name" value={name} onChange={e => setName(e.target.value)}
+              className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+          )}
+          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+            className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+            className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          <button className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+            {isRegister ? 'Create Account' : 'Sign In'}
+          </button>
+        </form>
+        <button onClick={() => { setIsRegister(!isRegister); setError('') }}
+          className="mt-4 text-sm text-gray-500 hover:text-gray-300 w-full text-center transition">
+          {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Chart Component ──
+function Chart({ symbol, interval, ticker }: { symbol: string; interval: string; ticker?: Ticker }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<any>(null)
+  const seriesRef = useRef<any>(null)
+  const lastCandleRef = useRef<any>(null)
+
+  const loadChart = useCallback(async () => {
+    if (!containerRef.current) return
+
+    const { createChart, CandlestickSeries } = await import('lightweight-charts')
+
+    if (chartRef.current) {
+      chartRef.current.remove()
+    }
+
+    const chart = createChart(containerRef.current, {
+      layout: { background: { color: '#0a0a0f' }, textColor: '#6b7280' },
+      grid: { vertLines: { color: '#1a1a25' }, horzLines: { color: '#1a1a25' } },
+      crosshair: { mode: 0 },
+      rightPriceScale: { borderColor: '#1a1a25' },
+      timeScale: { borderColor: '#1a1a25', timeVisible: true },
+    })
+
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: '#10b981',
+      downColor: '#ef4444',
+      borderUpColor: '#10b981',
+      borderDownColor: '#ef4444',
+      wickUpColor: '#10b981',
+      wickDownColor: '#ef4444',
+    })
+
+    chartRef.current = chart
+    seriesRef.current = series
+
+    try {
+      const { data } = await axios.get(`/api/kline?symbol=${symbol}&interval=${interval}&limit=200`)
+      if (data?.result?.list) {
+        const candles = data.result.list
+          .map((k: string[]) => ({
+            time: parseInt(k[0]) / 1000,
+            open: parseFloat(k[1]),
+            high: parseFloat(k[2]),
+            low: parseFloat(k[3]),
+            close: parseFloat(k[4]),
+          }))
+          .reverse()
+        series.setData(candles)
+        chart.timeScale().fitContent()
+        if (candles.length > 0) {
+          lastCandleRef.current = candles[candles.length - 1]
+        }
+      }
+    } catch {}
+
+    const handleResize = () => {
+      if (containerRef.current) {
+        chart.applyOptions({ width: containerRef.current.clientWidth })
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [symbol, interval])
+
+  useEffect(() => { loadChart() }, [loadChart])
+
+  // Update last candle with live price
+  useEffect(() => {
+    if (!ticker || !seriesRef.current || !lastCandleRef.current) return
+
+    const price = parseFloat(ticker.lastPrice)
+    const now = Math.floor(Date.now() / 1000)
+
+    const intervalMap: Record<string, number> = {
+      '1': 60, '5': 300, '15': 900, '60': 3600, '240': 14400, 'D': 86400,
+    }
+    const secs = intervalMap[interval] || 3600
+    const currentBucket = Math.floor(now / secs) * secs
+
+    const lastCandle = lastCandleRef.current
+
+    if (currentBucket > lastCandle.time) {
+      const newCandle = { time: currentBucket, open: price, high: price, low: price, close: price }
+      seriesRef.current.update(newCandle)
+      lastCandleRef.current = newCandle
+    } else {
+      const updated = {
+        ...lastCandle,
+        close: price,
+        high: Math.max(lastCandle.high, price),
+        low: Math.min(lastCandle.low, price),
+      }
+      seriesRef.current.update(updated)
+      lastCandleRef.current = updated
+    }
+  }, [ticker, interval])
+
+  useEffect(() => {
+    return () => { chartRef.current?.remove() }
+  }, [])
+
+  return <div ref={containerRef} className="w-full h-[400px]" />
+}
+
+// ── Main App ──
 function App() {
   const [token, setTokenState] = useState(localStorage.getItem('token') || '')
   const [tickers, setTickers] = useState<Record<string, Ticker>>({})
@@ -31,17 +206,10 @@ function App() {
   const [holdings, setHoldings] = useState<Holding[]>([])
   const [trades, setTrades] = useState<TradeLog[]>([])
   const [loading, setLoading] = useState(false)
-
-  // Auth form
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [isRegister, setIsRegister] = useState(false)
-  const [authError, setAuthError] = useState('')
-
-  // Trade form
-  const [tradeSymbol, setTradeSymbol] = useState('BTCUSDT')
+  const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT')
+  const [interval, setInterval] = useState('60')
   const [tradeQty, setTradeQty] = useState('0.01')
+  const [tab, setTab] = useState<'trades' | 'holdings'>('trades')
 
   useEffect(() => {
     if (token) {
@@ -51,14 +219,11 @@ function App() {
   }, [token])
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const data = await getTickers()
-        setTickers(data)
-      } catch {}
+    const id = window.setInterval(async () => {
+      try { setTickers(await getTickers()) } catch {}
     }, 2000)
     getTickers().then(setTickers).catch(() => {})
-    return () => clearInterval(interval)
+    return () => window.clearInterval(id)
   }, [])
 
   async function fetchData() {
@@ -69,41 +234,26 @@ function App() {
     } catch {}
   }
 
-  async function handleAuth(e: React.FormEvent) {
-    e.preventDefault()
-    setAuthError('')
-    try {
-      const data = isRegister
-        ? await register(email, password, name)
-        : await login(email, password)
-      localStorage.setItem('token', data.token)
-      setToken(data.token)
-      setTokenState(data.token)
-    } catch {
-      setAuthError('Authentication failed')
-    }
+  function handleLogin(t: string) {
+    localStorage.setItem('token', t)
+    setToken(t)
+    setTokenState(t)
   }
 
   function handleLogout() {
     localStorage.removeItem('token')
     clearToken()
     setTokenState('')
-    setBalance(0)
-    setHoldings([])
-    setTrades([])
   }
 
   async function handleTrade(side: 'BUY' | 'SELL') {
     setLoading(true)
     try {
-      const data = await placeOrder(tradeSymbol, side, parseFloat(tradeQty))
+      const data = await placeOrder(selectedSymbol, side, parseFloat(tradeQty))
       setTrades(prev => [{
-        symbol: data.trade.symbol,
-        side: data.trade.side,
-        quantity: data.trade.quantity,
-        price: data.trade.price,
-        total: data.trade.total,
-        latency_us: data.latency_us,
+        symbol: data.trade.symbol, side: data.trade.side,
+        quantity: data.trade.quantity, price: data.trade.price,
+        total: data.trade.total, latency_us: data.latency_us,
         timestamp: new Date().toLocaleTimeString(),
       }, ...prev])
       await fetchData()
@@ -113,156 +263,222 @@ function App() {
     setLoading(false)
   }
 
-  const avgLatency = trades.length > 0
-    ? Math.round(trades.reduce((sum, t) => sum + t.latency_us, 0) / trades.length)
-    : 0
+  if (!token) return <AuthScreen onLogin={handleLogin} />
 
-  // Auth screen
-  if (!token) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-        <div className="w-full max-w-sm p-6">
-          <h1 className="text-2xl font-bold mb-1">TradeGo</h1>
-          <p className="text-gray-400 mb-6 text-sm">High-performance crypto trading simulator</p>
-          <form onSubmit={handleAuth} className="space-y-3">
-            {isRegister && (
-              <input
-                type="text" placeholder="Name" value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded text-sm focus:outline-none focus:border-gray-600"
-              />
-            )}
-            <input
-              type="email" placeholder="Email" value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded text-sm focus:outline-none focus:border-gray-600"
-            />
-            <input
-              type="password" placeholder="Password" value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded text-sm focus:outline-none focus:border-gray-600"
-            />
-            {authError && <p className="text-red-400 text-sm">{authError}</p>}
-            <button className="w-full py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium">
-              {isRegister ? 'Register' : 'Login'}
-            </button>
-          </form>
-          <button onClick={() => setIsRegister(!isRegister)} className="mt-3 text-sm text-gray-400 hover:text-white">
-            {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
-          </button>
-        </div>
-      </div>
-    )
-  }
+  const ticker = tickers[selectedSymbol]
+  const pct = ticker ? parseFloat(ticker.price24hPcnt) * 100 : 0
+  const isUp = pct >= 0
+  const avgLatency = trades.length > 0 ? Math.round(trades.reduce((s, t) => s + t.latency_us, 0) / trades.length) : 0
 
-  // Dashboard
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold">TradeGo</h1>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-gray-400">Balance: <span className="text-white font-medium">${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
-          <button onClick={handleLogout} className="text-gray-400 hover:text-white">Logout</button>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Live prices */}
-        <div className="lg:col-span-2">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Live prices</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+    <div className="min-h-screen bg-[#0a0a0f] text-white">
+      {/* Header */}
+      <header className="border-b border-[#1a1a25] px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <h1 className="text-lg font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
+          <div className="flex gap-1 overflow-x-auto">
             {Object.values(tickers).sort((a, b) => a.symbol.localeCompare(b.symbol)).map(t => {
-              const pct = (parseFloat(t.price24hPcnt) * 100)
-              const isUp = pct >= 0
+              const p = parseFloat(t.price24hPcnt) * 100
               return (
-                <button key={t.symbol} onClick={() => setTradeSymbol(t.symbol)}
-                  className={`p-3 rounded border text-left text-sm ${tradeSymbol === t.symbol ? 'border-green-600 bg-green-600/10' : 'border-gray-800 bg-gray-900 hover:border-gray-700'}`}>
-                  <div className="font-medium text-xs">{t.symbol.replace('USDT', '')}</div>
-                  <div className="font-mono mt-1">${parseFloat(t.lastPrice).toLocaleString()}</div>
-                  <div className={`text-xs mt-1 ${isUp ? 'text-green-400' : 'text-red-400'}`}>
-                    {isUp ? '+' : ''}{pct.toFixed(2)}%
-                  </div>
+                <button key={t.symbol} onClick={() => setSelectedSymbol(t.symbol)}
+                  className={`px-3 py-1.5 rounded text-xs whitespace-nowrap transition ${selectedSymbol === t.symbol ? 'bg-[#1a1a25] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                  {t.symbol.replace('USDT', '')} <span className={p >= 0 ? 'text-emerald-400' : 'text-red-400'}>{p >= 0 ? '+' : ''}{p.toFixed(1)}%</span>
                 </button>
               )
             })}
           </div>
         </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-gray-500">Balance: <span className="text-white font-mono">${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+          <button onClick={handleLogout} className="text-gray-500 hover:text-white transition">Logout</button>
+        </div>
+      </header>
 
-        {/* Trade panel */}
-        <div>
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Trade {tradeSymbol.replace('USDT', '')}</h2>
-          <div className="bg-gray-900 border border-gray-800 rounded p-4 space-y-3">
-            <div>
-              <label className="text-xs text-gray-400">Quantity</label>
-              <input
-                type="number" step="any" value={tradeQty}
-                onChange={e => setTradeQty(e.target.value)}
-                className="w-full mt-1 px-3 py-2 bg-gray-950 border border-gray-800 rounded text-sm font-mono focus:outline-none focus:border-gray-600"
-              />
-              {tickers[tradeSymbol] && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Total: ${(parseFloat(tradeQty) * parseFloat(tickers[tradeSymbol].lastPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => handleTrade('BUY')} disabled={loading}
-                className="py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded text-sm font-medium">
-                Buy
-              </button>
-              <button onClick={() => handleTrade('SELL')} disabled={loading}
-                className="py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-sm font-medium">
-                Sell
-              </button>
-            </div>
-          </div>
+      <div className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
 
-          {/* Holdings */}
-          {holdings.length > 0 && (
-            <div className="mt-4">
-              <h2 className="text-sm font-medium text-gray-400 mb-2">Holdings</h2>
-              <div className="space-y-1">
-                {holdings.map(h => (
-                  <div key={h.symbol} className="flex justify-between bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
-                    <span>{h.symbol.replace('USDT', '')}</span>
-                    <span className="font-mono">{h.quantity}</span>
-                  </div>
-                ))}
-              </div>
+        {/* Chart area */}
+        <div className="lg:col-span-3">
+          {/* Symbol info bar */}
+          {ticker && (
+            <div className="flex items-baseline gap-4 mb-2 px-1">
+              <span className="text-xl font-bold">{selectedSymbol.replace('USDT', '')}/USDT</span>
+              <span className="text-xl font-mono">${formatNum(parseFloat(ticker.lastPrice))}</span>
+              <span className={`text-sm ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>{isUp ? '+' : ''}{pct.toFixed(2)}%</span>
+              <span className="text-xs text-gray-600">H: ${formatNum(parseFloat(ticker.highPrice24h))}</span>
+              <span className="text-xs text-gray-600">L: ${formatNum(parseFloat(ticker.lowPrice24h))}</span>
+              <span className="text-xs text-gray-600">Vol: {parseFloat(ticker.volume24h).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
           )}
-        </div>
 
-        {/* Latency dashboard */}
-        <div className="lg:col-span-3">
-          <div className="flex items-center gap-4 mb-3">
-            <h2 className="text-sm font-medium text-gray-400">Execution latency</h2>
-            {trades.length > 0 && (
-              <div className="flex gap-4 text-xs">
-                <span className="text-gray-500">Avg: <span className="text-yellow-400 font-mono">{avgLatency.toLocaleString()} µs</span></span>
-                <span className="text-gray-500">Min: <span className="text-green-400 font-mono">{Math.min(...trades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
-                <span className="text-gray-500">Max: <span className="text-red-400 font-mono">{Math.max(...trades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
-                <span className="text-gray-500">Trades: <span className="text-white font-mono">{trades.length}</span></span>
+          {/* Interval selector */}
+          <div className="flex gap-1 mb-2">
+            {INTERVALS.map(iv => (
+              <button key={iv.value} onClick={() => setInterval(iv.value)}
+                className={`px-3 py-1 rounded text-xs transition ${interval === iv.value ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300'}`}>
+                {iv.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <div className="border border-[#1a1a25] rounded-lg overflow-hidden">
+            <Chart symbol={selectedSymbol} interval={interval} ticker={ticker} />
+          </div>
+
+          {/* Trades / Holdings tabs */}
+          <div className="mt-4">
+            <div className="flex gap-4 border-b border-[#1a1a25] mb-3">
+              <button onClick={() => setTab('trades')}
+                className={`pb-2 text-sm transition ${tab === 'trades' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
+                Trade log {trades.length > 0 && <span className="text-gray-600 ml-1">({trades.length})</span>}
+              </button>
+              <button onClick={() => setTab('holdings')}
+                className={`pb-2 text-sm transition ${tab === 'holdings' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
+                Holdings {holdings.length > 0 && <span className="text-gray-600 ml-1">({holdings.length})</span>}
+              </button>
+            </div>
+
+            {tab === 'trades' && (
+              <>
+                {trades.length > 0 && (
+                  <div className="flex gap-4 text-xs mb-2 text-gray-500">
+                    <span>Avg latency: <span className="text-amber-400 font-mono">{avgLatency.toLocaleString()} µs</span></span>
+                    <span>Min: <span className="text-emerald-400 font-mono">{Math.min(...trades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
+                    <span>Max: <span className="text-red-400 font-mono">{Math.max(...trades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
+                  </div>
+                )}
+                <div className="space-y-1 max-h-60 overflow-y-auto">
+                  {trades.length === 0 && <p className="text-sm text-gray-700">No trades yet</p>}
+                  {trades.map((t, i) => (
+                    <div key={i} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                      <span className={`w-10 font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
+                      <span className="w-16 text-gray-300">{t.symbol.replace('USDT', '')}</span>
+                      <span className="w-20">{t.quantity}</span>
+                      <span className="w-28">@ ${t.price.toLocaleString()}</span>
+                      <span className="w-28">${t.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span className="ml-auto text-amber-400">{t.latency_us.toLocaleString()} µs</span>
+                      <span className="text-gray-700 w-16 text-right">{t.timestamp}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {tab === 'holdings' && (
+              <div className="space-y-1">
+                {holdings.length === 0 && <p className="text-sm text-gray-700">No holdings</p>}
+                {holdings.map(h => {
+                  const currentPrice = tickers[h.symbol] ? parseFloat(tickers[h.symbol].lastPrice) : 0
+                  const value = h.quantity * currentPrice
+                  const pnl = (currentPrice - h.avg_buy_price) * h.quantity
+                  const pnlPct = h.avg_buy_price > 0 ? ((currentPrice - h.avg_buy_price) / h.avg_buy_price) * 100 : 0
+                  return (
+                    <div key={h.symbol} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                      <span className="w-16 text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
+                      <span className="w-24">Qty: {h.quantity}</span>
+                      <span className="w-32">Avg: ${formatNum(h.avg_buy_price)}</span>
+                      <span className="w-28">Value: ${formatNum(value)}</span>
+                      <span className={`ml-auto ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
+        </div>
 
-          {trades.length === 0 ? (
-            <p className="text-sm text-gray-600">Place a trade to see execution latency</p>
-          ) : (
-            <div className="space-y-1">
-              {trades.map((t, i) => (
-                <div key={i} className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded px-4 py-2 text-sm">
-                  <span className={`font-medium w-10 ${t.side === 'BUY' ? 'text-green-400' : 'text-red-400'}`}>{t.side}</span>
-                  <span className="w-20">{t.symbol.replace('USDT', '')}</span>
-                  <span className="font-mono w-24">{t.quantity}</span>
-                  <span className="font-mono w-28">@ ${t.price.toLocaleString()}</span>
-                  <span className="font-mono w-28">${t.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  <span className="ml-auto font-mono text-yellow-400">{t.latency_us.toLocaleString()} µs</span>
-                  <span className="text-gray-600 text-xs">{t.timestamp}</span>
-                </div>
+        {/* Right sidebar — trade panel */}
+        <div>
+          <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
+            <h3 className="text-sm font-medium mb-3">Trade {selectedSymbol.replace('USDT', '')}</h3>
+
+            {ticker && (
+              <div className="text-2xl font-bold font-mono mb-4">
+                ${formatNum(parseFloat(ticker.lastPrice))}
+              </div>
+            )}
+
+            <div className="mb-3">
+              <label className="text-xs text-gray-500 block mb-1">Quantity</label>
+              <input type="number" step="any" value={tradeQty} onChange={e => setTradeQty(e.target.value)}
+                className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-800 transition" />
+            </div>
+
+            {ticker && (
+              <div className="text-xs text-gray-600 mb-4">
+                Total: <span className="text-gray-400">${(parseFloat(tradeQty || '0') * parseFloat(ticker.lastPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button onClick={() => handleTrade('BUY')} disabled={loading}
+                className="py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">
+                Buy
+              </button>
+              <button onClick={() => handleTrade('SELL')} disabled={loading}
+                className="py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">
+                Sell
+              </button>
+            </div>
+
+            {/* Quick amounts */}
+            <div className="flex gap-1">
+              {['0.001', '0.01', '0.1', '1'].map(q => (
+                <button key={q} onClick={() => setTradeQty(q)}
+                  className={`flex-1 py-1.5 rounded text-xs transition ${tradeQty === q ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300 border border-[#1a1a25]'}`}>
+                  {q}
+                </button>
               ))}
+            </div>
+          </div>
+
+          {/* Holdings summary */}
+          {holdings.length > 0 && (
+            <div className="mt-4 bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
+              <h3 className="text-sm font-medium mb-3">Holdings</h3>
+              <div className="space-y-2">
+                {holdings.map(h => {
+                  const cp = tickers[h.symbol] ? parseFloat(tickers[h.symbol].lastPrice) : 0
+                  const pnl = (cp - h.avg_buy_price) * h.quantity
+                  return (
+                    <button key={h.symbol} onClick={() => setSelectedSymbol(h.symbol)}
+                      className="w-full flex justify-between items-center text-xs hover:bg-[#1a1a25] rounded px-2 py-1.5 transition">
+                      <span className="font-medium">{h.symbol.replace('USDT', '')}</span>
+                      <span className="font-mono text-gray-400">{h.quantity}</span>
+                      <span className={`font-mono ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Latency card */}
+          {trades.length > 0 && (
+            <div className="mt-4 bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
+              <h3 className="text-sm font-medium mb-3">Performance</h3>
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div>
+                  <div className="text-amber-400 font-mono text-lg">{avgLatency.toLocaleString()}</div>
+                  <div className="text-xs text-gray-600">Avg µs</div>
+                </div>
+                <div>
+                  <div className="text-emerald-400 font-mono text-lg">{Math.min(...trades.map(t => t.latency_us)).toLocaleString()}</div>
+                  <div className="text-xs text-gray-600">Min µs</div>
+                </div>
+                <div>
+                  <div className="text-red-400 font-mono text-lg">{Math.max(...trades.map(t => t.latency_us)).toLocaleString()}</div>
+                  <div className="text-xs text-gray-600">Max µs</div>
+                </div>
+                <div>
+                  <div className="text-white font-mono text-lg">{trades.length}</div>
+                  <div className="text-xs text-gray-600">Trades</div>
+                </div>
+              </div>
             </div>
           )}
         </div>

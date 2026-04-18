@@ -66,6 +66,7 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *
 	s.router.GET("/health", handler.NewHealthHandler(s.db))
 	s.router.GET("/ticker", mh.GetTicker)
 	s.router.GET("/tickers", mh.GetAllTickers)
+	s.router.GET("/kline", handler.GetKline)
 
 	s.router.POST("/auth/register", ah.Register)
 	s.router.POST("/auth/login", ah.Login)
