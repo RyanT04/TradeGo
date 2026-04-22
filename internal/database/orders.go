@@ -132,3 +132,29 @@ func (db *DB) GetHoldings(userID string) ([]models.Holding, error) {
 	}
 	return holdings, nil
 }
+
+func (db *DB) GetTrades(userID string, limit int) ([]models.Trade, error) {
+	rows, err := db.Pool.Query(
+		context.Background(),
+		`SELECT id, user_id, symbol, side, quantity, price, total, created_at
+		 FROM trades WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2`,
+		userID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	trades := []models.Trade{}
+	for rows.Next() {
+		var t models.Trade
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Symbol, &t.Side,
+			&t.Quantity, &t.Price, &t.Total, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		trades = append(trades, t)
+	}
+	return trades, nil
+}

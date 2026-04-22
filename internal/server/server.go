@@ -76,10 +76,13 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *
 	protected.Use(auth.AuthMiddleware(jwtService))
 	{
 		protected.GET("/auth/me", ah.Me)
+		protected.PATCH("/auth/profile", ah.UpdateProfile)
+		protected.PATCH("/auth/balance", ah.SetStartingBalance)
 		protected.POST("/order", oh.PlaceOrder)
 		protected.GET("/orders", oh.GetOrders)
 		protected.GET("/holdings", oh.GetHoldings)
 		protected.GET("/balance", oh.GetBalance)
+		protected.GET("/trades", oh.GetTrades)
 	}
 }
 

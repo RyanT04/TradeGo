@@ -3,8 +3,11 @@ CREATE TABLE users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    balance DECIMAL(20, 8) DEFAULT 10000.00,
+    name VARCHAR(100) NOT NULL DEFAULT '',
+    username VARCHAR(50) UNIQUE,
+    avatar VARCHAR(10),
+    balance DECIMAL(20, 8) DEFAULT 0,
+    onboarded BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

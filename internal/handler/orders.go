@@ -98,3 +98,15 @@ func (h *OrderHandler) GetBalance(c *gin.Context) {
 		"balance": user.Balance,
 	})
 }
+
+func (h *OrderHandler) GetTrades(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	trades, err := h.db.GetTrades(userID, 100)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get trades"})
+		return
+	}
+
+	c.JSON(http.StatusOK, trades)
+}

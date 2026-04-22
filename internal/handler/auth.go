@@ -19,13 +19,12 @@ func NewAuthHandler(db *database.DB, jwt *auth.JWTService) *AuthHandler {
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required"`
-		Password string `json:"password" binding:"required"`
-		Name     string `json:"name" binding:"required"`
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required,min=6"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email, password, and name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid email and password (min 6 chars) required"})
 		return
 	}
 
@@ -35,7 +34,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.db.CreateUser(req.Email, hash, req.Name)
+	user, err := h.db.CreateUser(req.Email, hash)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "email already exists"})
 		return
@@ -96,5 +95,64 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req struct {
+		Username string `json:"username" binding:"required,min=3,max=20"`
+		Avatar   string `json:"avatar" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username (3-20 chars) and avatar are required"})
+		return
+	}
+
+	taken, err := h.db.CheckUsernameTaken(req.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check username"})
+		return
+	}
+	if taken {
+		c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+		return
+	}
+
+	if err := h.db.UpdateProfile(userID, req.Username, req.Avatar); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
+		return
+	}
+
+	user, _ := h.db.GetUserByID(userID)
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *AuthHandler) SetStartingBalance(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req struct {
+		Balance float64 `json:"balance" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "balance is required"})
+		return
+	}
+
+	allowed := map[float64]bool{1000: true, 10000: true, 100000: true}
+	if !allowed[req.Balance] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "balance must be 1000, 10000, or 100000"})
+		return
+	}
+
+	if err := h.db.SetStartingBalance(userID, req.Balance); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set balance"})
+		return
+	}
+
+	user, _ := h.db.GetUserByID(userID)
 	c.JSON(http.StatusOK, user)
 }

@@ -15,8 +15,23 @@ export async function login(email: string, password: string) {
   return data
 }
 
-export async function register(email: string, password: string, name: string) {
-  const { data } = await api.post('/auth/register', { email, password, name })
+export async function register(email: string, password: string) {
+  const { data } = await api.post('/auth/register', { email, password })
+  return data
+}
+
+export async function getMe() {
+  const { data } = await api.get('/auth/me')
+  return data
+}
+
+export async function updateProfile(username: string, avatar: string) {
+  const { data } = await api.patch('/auth/profile', { username, avatar })
+  return data
+}
+
+export async function setStartingBalance(balance: number) {
+  const { data } = await api.patch('/auth/balance', { balance })
   return data
 }
 
@@ -37,5 +52,10 @@ export async function getHoldings() {
 
 export async function placeOrder(symbol: string, side: string, quantity: number) {
   const { data } = await api.post('/order', { symbol, side, quantity })
+  return data
+}
+
+export async function getTrades() {
+  const { data } = await api.get('/trades')
   return data
 }

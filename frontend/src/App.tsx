@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { setToken, clearToken, login, register, getTickers, getBalance, getHoldings, placeOrder } from './api'
+import { setToken, clearToken, login, register, getMe, updateProfile, setStartingBalance, getTickers, getBalance, getHoldings, placeOrder, getTrades } from './api'
 import axios from 'axios'
 
 interface Ticker {
@@ -42,55 +42,189 @@ function formatNum(n: number, decimals = 2) {
   return n.toFixed(6)
 }
 
-// ── Auth Screen ──
-function AuthScreen({ onLogin }: { onLogin: (token: string) => void }) {
+// ── Auth Screen (multi-step wizard) ──
+function AuthScreen({ onComplete }: { onComplete: (token: string) => void }) {
+  const [step, setStep] = useState<'auth' | 'profile' | 'balance'>('auth')
+  const [token, setLocalToken] = useState('')
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [isRegister, setIsRegister] = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isRegister, setIsRegister] = useState(true)
   const [error, setError] = useState('')
 
-  async function handleSubmit(e: React.FormEvent) {
+  const [username, setUsername] = useState('')
+  const [avatar, setAvatar] = useState('🚀')
+  const avatars = ['🚀', '💎', '🔥', '⚡', '🌟', '🦄', '🐸', '🦊', '🐺', '🦁', '🐻', '🐼']
+
+  const [selectedBalance, setSelectedBalance] = useState<number | null>(null)
+  const balanceOptions = [
+    { value: 1000, label: '$1,000', subtitle: 'Small portfolio' },
+    { value: 10000, label: '$10,000', subtitle: 'Balanced (recommended)' },
+    { value: 100000, label: '$100,000', subtitle: 'High roller' },
+  ]
+
+  async function handleAuth(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    if (isRegister && password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    try {
+      const data = isRegister
+        ? await register(email, password)
+        : await login(email, password)
+
+      localStorage.setItem('token', data.token)
+      setToken(data.token)
+      setLocalToken(data.token)
+
+      if (data.user.onboarded) {
+        onComplete(data.token)
+      } else {
+        setStep('profile')
+      }
+    } catch (err: any) {
+      const backendError = err.response?.data?.error
+      setError(backendError ? backendError.charAt(0).toUpperCase() + backendError.slice(1) : 'Authentication failed')
+    }
+  }
+
+  async function handleProfile(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     try {
-      const data = isRegister
-        ? await register(email, password, name)
-        : await login(email, password)
-      onLogin(data.token)
+      await updateProfile(username, avatar)
+      setStep('balance')
     } catch (err: any) {
-      const backendError = err.response?.data?.error
-      if (backendError) {
-        setError(backendError.charAt(0).toUpperCase() + backendError.slice(1))
-      } else {
-        setError(isRegister ? 'Registration failed' : 'Invalid credentials')
-      }
+      setError(err.response?.data?.error || 'Failed to update profile')
     }
   }
+
+  async function handleBalance() {
+    if (!selectedBalance) return
+    setError('')
+    try {
+      await setStartingBalance(selectedBalance)
+      onComplete(token)
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to set balance')
+    }
+  }
+
+  if (step === 'auth') {
     return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
-          <p className="text-gray-500 text-sm mt-2">High-performance crypto trading simulator</p>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {isRegister && (
-            <input type="text" placeholder="Name" value={name} onChange={e => setName(e.target.value)}
+      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
+            <p className="text-gray-500 text-sm mt-2">High-performance crypto trading simulator</p>
+          </div>
+          <form onSubmit={handleAuth} className="space-y-3">
+            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
               className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
-          )}
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          <button className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
-            {isRegister ? 'Create Account' : 'Sign In'}
+            <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+            {isRegister && (
+              <input type="password" placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+            )}
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            <button className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+              {isRegister ? 'Create Account' : 'Sign In'}
+            </button>
+          </form>
+          <button onClick={() => { setIsRegister(!isRegister); setError('') }}
+            className="mt-4 text-sm text-gray-500 hover:text-gray-300 w-full text-center transition">
+            {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
           </button>
-        </form>
-        <button onClick={() => { setIsRegister(!isRegister); setError('') }}
-          className="mt-4 text-sm text-gray-500 hover:text-gray-300 w-full text-center transition">
-          {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'profile') {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+        <div className="w-full max-w-md px-6">
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="h-1.5 w-8 bg-emerald-500 rounded-full" />
+            <div className="h-1.5 w-8 bg-emerald-500 rounded-full" />
+            <div className="h-1.5 w-8 bg-gray-700 rounded-full" />
+          </div>
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold">Set up your profile</h2>
+            <p className="text-gray-500 text-sm mt-1">Choose a username and avatar</p>
+          </div>
+          <form onSubmit={handleProfile} className="space-y-4">
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Avatar</label>
+              <div className="grid grid-cols-6 gap-2">
+                {avatars.map(a => (
+                  <button type="button" key={a} onClick={() => setAvatar(a)}
+                    className={`aspect-square text-2xl rounded-lg border transition ${avatar === a ? 'bg-emerald-500/10 border-emerald-500' : 'bg-[#12121a] border-gray-800 hover:border-gray-700'}`}>
+                    {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Username</label>
+              <input type="text" placeholder="cryptotrader123" value={username}
+                onChange={e => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                minLength={3} maxLength={20} required
+                className="w-full px-4 py-2.5 bg-[#12121a] border border-gray-800 rounded-lg text-sm focus:outline-none focus:border-emerald-600 transition" />
+              <p className="text-xs text-gray-600 mt-1">3-20 characters, lowercase, no spaces</p>
+            </div>
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            <button className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+              Continue
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="w-full max-w-md px-6">
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="h-1.5 w-8 bg-emerald-500 rounded-full" />
+          <div className="h-1.5 w-8 bg-emerald-500 rounded-full" />
+          <div className="h-1.5 w-8 bg-emerald-500 rounded-full" />
+        </div>
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold">Choose your starting balance</h2>
+          <p className="text-gray-500 text-sm mt-1">This is virtual money for practice trading</p>
+        </div>
+        <div className="space-y-2">
+          {balanceOptions.map(opt => (
+            <button key={opt.value} onClick={() => setSelectedBalance(opt.value)}
+              className={`w-full p-4 rounded-lg border text-left transition ${selectedBalance === opt.value ? 'bg-emerald-500/10 border-emerald-500' : 'bg-[#12121a] border-gray-800 hover:border-gray-700'}`}>
+              <div className="flex justify-between items-center">
+                <div>
+                  <div className="text-lg font-bold">{opt.label}</div>
+                  <div className="text-xs text-gray-500">{opt.subtitle}</div>
+                </div>
+                {selectedBalance === opt.value && (
+                  <div className="h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                    <svg className="h-3 w-3 text-black" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+        {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+        <button onClick={handleBalance} disabled={!selectedBalance}
+          className="w-full mt-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition">
+          Start Trading
         </button>
       </div>
     </div>
@@ -164,7 +298,6 @@ function Chart({ symbol, interval, ticker }: { symbol: string; interval: string;
 
   useEffect(() => { loadChart() }, [loadChart])
 
-  // Update last candle with live price
   useEffect(() => {
     if (!ticker || !seriesRef.current || !lastCandleRef.current) return
 
@@ -205,6 +338,7 @@ function Chart({ symbol, interval, ticker }: { symbol: string; interval: string;
 // ── Main App ──
 function App() {
   const [token, setTokenState] = useState(localStorage.getItem('token') || '')
+  const [user, setUser] = useState<{ username?: string; avatar?: string } | null>(null)
   const [tickers, setTickers] = useState<Record<string, Ticker>>({})
   const [balance, setBalance] = useState(0)
   const [holdings, setHoldings] = useState<Holding[]>([])
@@ -232,9 +366,21 @@ function App() {
 
   async function fetchData() {
     try {
-      const [bal, hold] = await Promise.all([getBalance(), getHoldings()])
+      const [bal, hold, me, history] = await Promise.all([getBalance(), getHoldings(), getMe(), getTrades()])
       setBalance(bal.balance)
       setHoldings(hold || [])
+      setUser(me)
+      if (history && history.length > 0) {
+        setTrades(history.map((t: any) => ({
+          symbol: t.symbol,
+          side: t.side,
+          quantity: t.quantity,
+          price: t.price,
+          total: t.total,
+          latency_us: 0,
+          timestamp: new Date(t.created_at).toLocaleTimeString(),
+        })))
+      }
     } catch {}
   }
 
@@ -248,6 +394,7 @@ function App() {
     localStorage.removeItem('token')
     clearToken()
     setTokenState('')
+    setUser(null)
   }
 
   async function handleTrade(side: 'BUY' | 'SELL') {
@@ -267,7 +414,7 @@ function App() {
     setLoading(false)
   }
 
-  if (!token) return <AuthScreen onLogin={handleLogin} />
+  if (!token) return <AuthScreen onComplete={handleLogin} />
 
   const ticker = tickers[selectedSymbol]
   const pct = ticker ? parseFloat(ticker.price24hPcnt) * 100 : 0
@@ -276,7 +423,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
-      {/* Header */}
       <header className="border-b border-[#1a1a25] px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <h1 className="text-lg font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
@@ -294,15 +440,18 @@ function App() {
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-500">Balance: <span className="text-white font-mono">${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+          {user && user.username && (
+            <div className="flex items-center gap-2 bg-[#12121a] border border-[#1a1a25] rounded-full pl-1 pr-3 py-1">
+              <span className="text-lg leading-none">{user.avatar}</span>
+              <span className="text-white text-xs">{user.username}</span>
+            </div>
+          )}
           <button onClick={handleLogout} className="text-gray-500 hover:text-white transition">Logout</button>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
-
-        {/* Chart area */}
         <div className="lg:col-span-3">
-          {/* Symbol info bar */}
           {ticker && (
             <div className="flex items-baseline gap-4 mb-2 px-1">
               <span className="text-xl font-bold">{selectedSymbol.replace('USDT', '')}/USDT</span>
@@ -314,7 +463,6 @@ function App() {
             </div>
           )}
 
-          {/* Interval selector */}
           <div className="flex gap-1 mb-2">
             {INTERVALS.map(iv => (
               <button key={iv.value} onClick={() => setInterval(iv.value)}
@@ -324,12 +472,10 @@ function App() {
             ))}
           </div>
 
-          {/* Chart */}
           <div className="border border-[#1a1a25] rounded-lg overflow-hidden">
             <Chart symbol={selectedSymbol} interval={interval} ticker={ticker} />
           </div>
 
-          {/* Trades / Holdings tabs */}
           <div className="mt-4">
             <div className="flex gap-4 border-b border-[#1a1a25] mb-3">
               <button onClick={() => setTab('trades')}
@@ -393,7 +539,6 @@ function App() {
           </div>
         </div>
 
-        {/* Right sidebar — trade panel */}
         <div>
           <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
             <h3 className="text-sm font-medium mb-3">Trade {selectedSymbol.replace('USDT', '')}</h3>
@@ -427,7 +572,6 @@ function App() {
               </button>
             </div>
 
-            {/* Quick amounts */}
             <div className="flex gap-1">
               {['0.001', '0.01', '0.1', '1'].map(q => (
                 <button key={q} onClick={() => setTradeQty(q)}
@@ -438,7 +582,6 @@ function App() {
             </div>
           </div>
 
-          {/* Holdings summary */}
           {holdings.length > 0 && (
             <div className="mt-4 bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
               <h3 className="text-sm font-medium mb-3">Holdings</h3>
@@ -461,7 +604,6 @@ function App() {
             </div>
           )}
 
-          {/* Latency card */}
           {trades.length > 0 && (
             <div className="mt-4 bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
               <h3 className="text-sm font-medium mb-3">Performance</h3>
