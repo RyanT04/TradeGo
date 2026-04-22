@@ -58,12 +58,16 @@ function AuthScreen({ onLogin }: { onLogin: (token: string) => void }) {
         ? await register(email, password, name)
         : await login(email, password)
       onLogin(data.token)
-    } catch {
-      setError(isRegister ? 'Registration failed' : 'Invalid credentials')
+    } catch (err: any) {
+      const backendError = err.response?.data?.error
+      if (backendError) {
+        setError(backendError.charAt(0).toUpperCase() + backendError.slice(1))
+      } else {
+        setError(isRegister ? 'Registration failed' : 'Invalid credentials')
+      }
     }
   }
-
-  return (
+    return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">

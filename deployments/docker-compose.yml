@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15
@@ -13,6 +11,26 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradego"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: tradego-backend
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://tradego:tradego123@postgres:5432/tradego?sslmode=disable
+      JWT_SECRET: tradego-dev-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
