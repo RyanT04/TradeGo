@@ -14,9 +14,29 @@ import (
 	"github.com/RyanT04/TradeGo/internal/middleware"
 )
 
+// defaultSymbols mirrors the 20 popular coins from TradeX (COINGECKO_TO_BYBIT map)
+// to keep the latency comparison fair and consistent between both simulators.
 var defaultSymbols = []string{
-	"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-	"ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
+	"BTCUSDT",   // bitcoin
+	"ETHUSDT",   // ethereum
+	"SOLUSDT",   // solana
+	"BNBUSDT",   // binancecoin
+	"XRPUSDT",   // ripple
+	"ADAUSDT",   // cardano
+	"DOGEUSDT",  // dogecoin
+	"AVAXUSDT",  // avalanche
+	"DOTUSDT",   // polkadot
+	"MATICUSDT", // matic-network
+	"LINKUSDT",  // chainlink
+	"UNIUSDT",   // uniswap
+	"LTCUSDT",   // litecoin
+	"ATOMUSDT",  // cosmos
+	"NEARUSDT",  // near-protocol
+	"APTUSDT",   // aptos
+	"ARBUSDT",   // arbitrum
+	"OPUSDT",    // optimism
+	"INJUSDT",   // injective-protocol
+	"SUIUSDT",   // sui
 }
 
 type Server struct {
@@ -45,8 +65,9 @@ func New(cfg *config.Config) *Server {
 	bybit := market.NewBybitClient()
 	bybit.Connect(defaultSymbols)
 
-	// Initialize matching engine
+	// Initialize matching engine and start background liquidation worker
 	engine := matching.NewEngine(db, bybit)
+	engine.StartLiquidationWorker()
 
 	// Initialize handlers
 	marketHandler := handler.NewMarketHandler(bybit)
@@ -78,11 +99,17 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *
 		protected.GET("/auth/me", ah.Me)
 		protected.PATCH("/auth/profile", ah.UpdateProfile)
 		protected.PATCH("/auth/balance", ah.SetStartingBalance)
+
 		protected.POST("/order", oh.PlaceOrder)
 		protected.GET("/orders", oh.GetOrders)
 		protected.GET("/holdings", oh.GetHoldings)
 		protected.GET("/balance", oh.GetBalance)
 		protected.GET("/trades", oh.GetTrades)
+
+		// Leveraged trading
+		protected.POST("/leveraged/open", oh.OpenLeveraged)
+		protected.POST("/leveraged/close/:id", oh.CloseLeveraged)
+		protected.GET("/leveraged", oh.GetLeveragedPositions)
 	}
 }
 

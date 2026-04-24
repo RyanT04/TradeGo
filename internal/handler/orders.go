@@ -110,3 +110,68 @@ func (h *OrderHandler) GetTrades(c *gin.Context) {
 
 	c.JSON(http.StatusOK, trades)
 }
+
+func (h *OrderHandler) OpenLeveraged(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req struct {
+		Symbol    string  `json:"symbol" binding:"required"`
+		Direction string  `json:"direction" binding:"required"`
+		Leverage  int     `json:"leverage" binding:"required"`
+		Margin    float64 `json:"margin" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "symbol, direction, leverage, and margin are required"})
+		return
+	}
+
+	result, err := h.engine.OpenLeveragedPosition(userID, req.Symbol, req.Direction, req.Leverage, req.Margin)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"position":   result.Position,
+		"latency_us": result.Latency.Microseconds(),
+	})
+}
+
+func (h *OrderHandler) CloseLeveraged(c *gin.Context) {
+	userID := c.GetString("user_id")
+	positionID := c.Param("id")
+
+	result, err := h.engine.CloseLeveragedPosition(userID, positionID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"position":   result.Position,
+		"pnl":        result.PnL,
+		"latency_us": result.Latency.Microseconds(),
+	})
+}
+
+func (h *OrderHandler) GetLeveragedPositions(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	open, err := h.db.GetOpenPositions(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get positions"})
+		return
+	}
+
+	closed, err := h.db.GetClosedPositions(userID, 50)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get closed positions"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"open":   open,
+		"closed": closed,
+	})
+}

@@ -59,3 +59,18 @@ export async function getTrades() {
   const { data } = await api.get('/trades')
   return data
 }
+
+export async function openLeveraged(symbol: string, direction: string, leverage: number, margin: number) {
+  const { data } = await api.post('/leveraged/open', { symbol, direction, leverage, margin })
+  return data
+}
+
+export async function closeLeveraged(positionID: string) {
+  const { data } = await api.post(`/leveraged/close/${positionID}`)
+  return data
+}
+
+export async function getLeveragedPositions() {
+  const { data } = await api.get('/leveraged')
+  return data
+}
