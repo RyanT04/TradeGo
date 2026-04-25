@@ -66,21 +66,31 @@ func (b *BybitClient) connectAndListen(symbols []string) error {
 	}
 	defer conn.Close()
 
-	// Build subscription args
-	args := make([]string, len(symbols))
-	for i, s := range symbols {
-		args[i] = "tickers." + s
+	// Bybit spot allows max 10 symbols per subscribe message — batch them
+	const batchSize = 10
+	for i := 0; i < len(symbols); i += batchSize {
+		end := i + batchSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		batch := symbols[i:end]
+
+		args := make([]string, len(batch))
+		for j, s := range batch {
+			args[j] = "tickers." + s
+		}
+
+		sub := map[string]any{
+			"op":   "subscribe",
+			"args": args,
+		}
+		if err := conn.WriteJSON(sub); err != nil {
+			return err
+		}
 	}
 
-	sub := map[string]any{
-		"op":   "subscribe",
-		"args": args,
-	}
-	if err := conn.WriteJSON(sub); err != nil {
-		return err
-	}
-
-	log.Printf("Bybit WebSocket connected, subscribed to %d symbols", len(symbols))
+	batches := (len(symbols) + batchSize - 1) / batchSize
+	log.Printf("Bybit WebSocket connected, subscribed to %d symbols in %d batches", len(symbols), batches)
 
 	// Keep connection alive
 	go func() {

@@ -1,0 +1,30 @@
+# Frontend (not needed in Go container)
+frontend/
+
+# CDK infrastructure
+infrastructure/
+
+# Node modules anywhere
+**/node_modules/
+
+# Git
+.git/
+.github/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local Docker volumes
+deployments/
+
+# Docs / README
+*.md
+docs/
+
+# Build artifacts
+*.test
+*.out
+tradego
+*.log
