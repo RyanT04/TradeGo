@@ -74,3 +74,34 @@ export async function getLeveragedPositions() {
   const { data } = await api.get('/leveraged')
   return data
 }
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const { data } = await api.post('/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  })
+  return data
+}
+
+export async function getFavourites() {
+  const { data } = await api.get('/favourites')
+  return data
+}
+
+export async function addFavourite(symbol: string) {
+  const { data } = await api.post('/favourites', { symbol })
+  return data
+}
+
+export async function removeFavourite(symbol: string) {
+  const { data } = await api.delete(`/favourites/${symbol}`)
+  return data
+}
+
+export async function resetPortfolio(balance: number, clearHistory: boolean) {
+  const { data } = await api.post('/portfolio/reset', {
+    balance,
+    clear_history: clearHistory,
+  })
+  return data
+}

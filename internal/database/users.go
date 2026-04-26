@@ -81,3 +81,12 @@ func (db *DB) CheckUsernameTaken(username string) (bool, error) {
 	).Scan(&exists)
 	return exists, err
 }
+
+func (db *DB) UpdatePassword(userID, newPasswordHash string) error {
+	_, err := db.Pool.Exec(
+		context.Background(),
+		`UPDATE users SET password_hash = $1 WHERE id = $2`,
+		newPasswordHash, userID,
+	)
+	return err
+}

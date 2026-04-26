@@ -73,17 +73,26 @@ func New(cfg *config.Config) *Server {
 	marketHandler := handler.NewMarketHandler(bybit)
 	authHandler := handler.NewAuthHandler(db, jwtService)
 	orderHandler := handler.NewOrderHandler(db, engine)
+	favouritesHandler := handler.NewFavouritesHandler(db)
+	portfolioHandler := handler.NewPortfolioHandler(db)
 
 	s := &Server{
 		port:   cfg.Port,
 		router: r,
 		db:     db,
 	}
-	s.routes(marketHandler, authHandler, orderHandler, jwtService)
+	s.routes(marketHandler, authHandler, orderHandler, favouritesHandler, portfolioHandler, jwtService)
 	return s
 }
 
-func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *handler.OrderHandler, jwtService *auth.JWTService) {
+func (s *Server) routes(
+	mh *handler.MarketHandler,
+	ah *handler.AuthHandler,
+	oh *handler.OrderHandler,
+	fh *handler.FavouritesHandler,
+	ph *handler.PortfolioHandler,
+	jwtService *auth.JWTService,
+) {
 	s.router.GET("/health", handler.NewHealthHandler(s.db))
 	s.router.GET("/ticker", mh.GetTicker)
 	s.router.GET("/tickers", mh.GetAllTickers)
@@ -99,6 +108,7 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *
 		protected.GET("/auth/me", ah.Me)
 		protected.PATCH("/auth/profile", ah.UpdateProfile)
 		protected.PATCH("/auth/balance", ah.SetStartingBalance)
+		protected.POST("/auth/change-password", ah.ChangePassword)
 
 		protected.POST("/order", oh.PlaceOrder)
 		protected.GET("/orders", oh.GetOrders)
@@ -110,6 +120,14 @@ func (s *Server) routes(mh *handler.MarketHandler, ah *handler.AuthHandler, oh *
 		protected.POST("/leveraged/open", oh.OpenLeveraged)
 		protected.POST("/leveraged/close/:id", oh.CloseLeveraged)
 		protected.GET("/leveraged", oh.GetLeveragedPositions)
+
+		// Favourites
+		protected.GET("/favourites", fh.GetFavourites)
+		protected.POST("/favourites", fh.AddFavourite)
+		protected.DELETE("/favourites/:symbol", fh.RemoveFavourite)
+
+		// Portfolio
+		protected.POST("/portfolio/reset", ph.Reset)
 	}
 }
 

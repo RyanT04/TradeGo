@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS leveraged_positions (
     closed_at TIMESTAMP WITH TIME ZONE
 );
 
+CREATE TABLE IF NOT EXISTS favourites (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, symbol)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favourites_user ON favourites(user_id);
+
 -- Indexes for query performance
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_trades_user ON trades(user_id);
