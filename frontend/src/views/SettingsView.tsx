@@ -6,9 +6,10 @@ import type { User } from '../types'
 interface SettingsViewProps {
   user: User | null
   onUpdate: () => void
+  onLogout: () => void
 }
 
-export function SettingsView({ user, onUpdate }: SettingsViewProps) {
+export function SettingsView({ user, onUpdate, onLogout }: SettingsViewProps) {
   const [username, setUsername] = useState(user?.username || '')
   const [avatar, setAvatar] = useState(user?.avatar || '🚀')
   const [profileMsg, setProfileMsg] = useState('')
@@ -72,7 +73,6 @@ export function SettingsView({ user, onUpdate }: SettingsViewProps) {
       onUpdate()
       setTimeout(() => setResetMsg(''), 5000)
     } catch (err: any) {
-      // Show the actual backend error message to the user
       const msg = err.response?.data?.error
       if (msg) {
         setResetError(`Reset failed: ${msg}`)
@@ -133,7 +133,7 @@ export function SettingsView({ user, onUpdate }: SettingsViewProps) {
       </div>
 
       {/* Reset portfolio */}
-      <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-5">
+      <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-5 mb-4">
         <h2 className="text-base font-medium mb-2">Reset portfolio</h2>
         <p className="text-xs text-gray-500 mb-4">
           Start over with a fresh balance. This closes all open positions, deletes all holdings,
@@ -191,6 +191,18 @@ export function SettingsView({ user, onUpdate }: SettingsViewProps) {
         )}
 
         {resetMsg && <p className="mt-3 text-sm text-emerald-400">{resetMsg}</p>}
+      </div>
+
+      {/* Sign out */}
+      <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-5">
+        <h2 className="text-base font-medium mb-2">Sign out</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          End your session on this device. You can sign back in any time.
+        </p>
+        <button onClick={onLogout}
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition">
+          Sign out
+        </button>
       </div>
     </div>
   )

@@ -4,11 +4,11 @@ import type { User } from '../types'
 interface SidebarProps {
   user: User | null
   balance: number
-  onLogout: () => void
 }
 
-export function Sidebar({ user, balance, onLogout }: SidebarProps) {
+export function Sidebar({ user, balance }: SidebarProps) {
   const items = [
+    { path: '/about', label: 'About', icon: 'ℹ️' },
     { path: '/trade', label: 'Trade', icon: '📊' },
     { path: '/portfolio', label: 'Portfolio', icon: '💼' },
     { path: '/markets', label: 'Markets', icon: '🌐' },
@@ -18,10 +18,11 @@ export function Sidebar({ user, balance, onLogout }: SidebarProps) {
   return (
     <aside className="w-56 bg-[#0a0a0f] border-r border-[#1a1a25] flex flex-col h-screen sticky top-0">
       <div className="p-5">
-        <NavLink to="/trade" className="text-lg font-bold tracking-tight">
+        <NavLink to="/" className="text-lg font-bold tracking-tight" title="Home">
           Trade<span className="text-emerald-400">Go</span>
         </NavLink>
       </div>
+
       <nav className="flex-1 px-3 space-y-1">
         {items.map(item => (
           <NavLink key={item.path} to={item.path}
@@ -32,7 +33,8 @@ export function Sidebar({ user, balance, onLogout }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
-      <div className="p-3 border-t border-[#1a1a25] space-y-3">
+
+      <div className="p-3 border-t border-[#1a1a25]">
         {user && user.username && (
           <div className="flex items-center gap-2 px-2">
             <span className="text-xl">{user.avatar}</span>
@@ -42,9 +44,6 @@ export function Sidebar({ user, balance, onLogout }: SidebarProps) {
             </div>
           </div>
         )}
-        <button onClick={onLogout} className="w-full px-3 py-2 text-xs text-gray-500 hover:text-white text-left transition">
-          Logout
-        </button>
       </div>
     </aside>
   )

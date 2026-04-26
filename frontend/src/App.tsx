@@ -23,12 +23,11 @@ interface AppShellProps {
   children: ReactNode
   user: User | null
   balance: number
-  onLogout: () => void
 }
-function AppShell({ children, user, balance, onLogout }: AppShellProps) {
+function AppShell({ children, user, balance }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex">
-      <Sidebar user={user} balance={balance} onLogout={onLogout} />
+      <Sidebar user={user} balance={balance} />
       <main className="flex-1 min-w-0">{children}</main>
     </div>
   )
@@ -85,7 +84,6 @@ function App() {
       setBalance(bal.balance)
       setHoldings(hold || [])
       setUser(me)
-      // Replace trades fully on fetch (handles reset that clears history)
       setTrades((history || []).map((t: any) => ({
         symbol: t.symbol, side: t.side, quantity: t.quantity, price: t.price,
         total: t.total, latency_us: 0,
@@ -169,7 +167,7 @@ function App() {
 
       <Route path="/trade" element={
         isAuthed ? (
-          <AppShell user={user} balance={balance} onLogout={handleLogout}>
+          <AppShell user={user} balance={balance}>
             <TradeView
               tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
               interval={interval} setInterval={setInterval}
@@ -190,7 +188,7 @@ function App() {
 
       <Route path="/portfolio" element={
         isAuthed ? (
-          <AppShell user={user} balance={balance} onLogout={handleLogout}>
+          <AppShell user={user} balance={balance}>
             <PortfolioView
               tickers={tickers} balance={balance} holdings={holdings}
               trades={trades} openPositions={openPositions}
@@ -202,7 +200,7 @@ function App() {
 
       <Route path="/markets" element={
         isAuthed ? (
-          <AppShell user={user} balance={balance} onLogout={handleLogout}>
+          <AppShell user={user} balance={balance}>
             <MarketsView tickers={tickers} favourites={favourites}
               toggleFavourite={toggleFavourite} setSelectedSymbol={setSelectedSymbol} />
           </AppShell>
@@ -211,8 +209,8 @@ function App() {
 
       <Route path="/settings" element={
         isAuthed ? (
-          <AppShell user={user} balance={balance} onLogout={handleLogout}>
-            <SettingsView user={user} onUpdate={fetchData} />
+          <AppShell user={user} balance={balance}>
+            <SettingsView user={user} onUpdate={fetchData} onLogout={handleLogout} />
           </AppShell>
         ) : <Navigate to="/login" replace />
       } />

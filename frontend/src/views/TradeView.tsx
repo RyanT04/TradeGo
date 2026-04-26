@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Chart } from '../components/Chart'
+import { CoinIcon } from '../components/CoinIcon'
 import { formatNum } from '../utils'
 import { INTERVALS, LEVERAGE_OPTIONS } from '../constants'
 import type { Ticker, Holding, TradeLog, Position } from '../types'
@@ -71,7 +72,16 @@ export function TradeView(props: TradeViewProps) {
 
   const isFav = favourites.includes(selectedSymbol)
   const [coinOpen, setCoinOpen] = useState(false)
-  const sortedTickers = Object.values(tickers).sort((a, b) => a.symbol.localeCompare(b.symbol))
+  const [coinSearch, setCoinSearch] = useState('')
+
+  const sortedTickers = Object.values(tickers).sort((a, b) => {
+    const va = parseFloat(a.volume24h) || 0
+    const vb = parseFloat(b.volume24h) || 0
+    return vb - va
+  })
+  const filteredDropdown = sortedTickers.filter(t =>
+    !coinSearch || t.symbol.toLowerCase().includes(coinSearch.toLowerCase())
+  )
 
   return (
     <div className="p-4">
@@ -79,27 +89,39 @@ export function TradeView(props: TradeViewProps) {
         <div className="lg:col-span-3">
           <div className="flex items-baseline gap-3 mb-2 px-1 relative">
             <div className="relative">
-              <button onClick={() => setCoinOpen(!coinOpen)}
+              <button onClick={() => { setCoinOpen(!coinOpen); setCoinSearch('') }}
                 className="text-xl font-bold flex items-center gap-2 hover:text-emerald-400 transition">
+                <CoinIcon symbol={selectedSymbol} size={24} />
                 {selectedSymbol.replace('USDT', '')}/USDT
                 <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
                 </svg>
               </button>
               {coinOpen && (
-                <div className="absolute top-full left-0 mt-1 w-72 max-h-96 overflow-y-auto bg-[#12121a] border border-[#1a1a25] rounded-lg shadow-2xl z-50">
-                  {sortedTickers.map(t => {
-                    const p = parseFloat(t.price24hPcnt) * 100
-                    return (
-                      <button key={t.symbol}
-                        onClick={() => { setSelectedSymbol(t.symbol); setCoinOpen(false) }}
-                        className={`w-full flex items-center gap-3 px-3 py-2 text-xs hover:bg-[#1a1a25] transition ${selectedSymbol === t.symbol ? 'bg-[#1a1a25]' : ''}`}>
-                        <span className="w-16 text-left font-semibold">{t.symbol.replace('USDT', '')}</span>
-                        <span className="font-mono text-gray-400 flex-1 text-left">${formatNum(parseFloat(t.lastPrice))}</span>
-                        <span className={p >= 0 ? 'text-emerald-400' : 'text-red-400'}>{p >= 0 ? '+' : ''}{p.toFixed(2)}%</span>
-                      </button>
-                    )
-                  })}
+                <div className="absolute top-full left-0 mt-1 w-80 max-h-[28rem] bg-[#12121a] border border-[#1a1a25] rounded-lg shadow-2xl z-50 flex flex-col">
+                  <input autoFocus type="text" placeholder="Search..." value={coinSearch}
+                    onChange={e => setCoinSearch(e.target.value)}
+                    className="m-2 px-3 py-1.5 bg-[#0a0a0f] border border-[#1a1a25] rounded text-xs focus:outline-none focus:border-emerald-600 transition" />
+                  <div className="overflow-y-auto">
+                    {filteredDropdown.slice(0, 100).map(t => {
+                      const p = parseFloat(t.price24hPcnt) * 100
+                      return (
+                        <button key={t.symbol}
+                          onClick={() => { setSelectedSymbol(t.symbol); setCoinOpen(false) }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-xs hover:bg-[#1a1a25] transition ${selectedSymbol === t.symbol ? 'bg-[#1a1a25]' : ''}`}>
+                          <CoinIcon symbol={t.symbol} size={20} />
+                          <span className="w-16 text-left font-semibold">{t.symbol.replace('USDT', '')}</span>
+                          <span className="font-mono text-gray-400 flex-1 text-left">${formatNum(parseFloat(t.lastPrice))}</span>
+                          <span className={p >= 0 ? 'text-emerald-400' : 'text-red-400'}>{p >= 0 ? '+' : ''}{p.toFixed(2)}%</span>
+                        </button>
+                      )
+                    })}
+                    {filteredDropdown.length > 100 && (
+                      <div className="px-3 py-2 text-xs text-gray-600 text-center">
+                        Showing top 100 of {filteredDropdown.length}. Refine search to see more.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -160,6 +182,7 @@ export function TradeView(props: TradeViewProps) {
                   {trades.map((t, i) => (
                     <div key={i} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
                       <span className={`w-10 font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
+                      <CoinIcon symbol={t.symbol} size={16} />
                       <span className="w-16 text-gray-300">{t.symbol.replace('USDT', '')}</span>
                       <span className="w-20">{t.quantity}</span>
                       <span className="w-28">@ ${t.price.toLocaleString()}</span>
@@ -182,6 +205,7 @@ export function TradeView(props: TradeViewProps) {
                   const pnlPct = h.avg_buy_price > 0 ? ((cp - h.avg_buy_price) / h.avg_buy_price) * 100 : 0
                   return (
                     <div key={h.symbol} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                      <CoinIcon symbol={h.symbol} size={16} />
                       <span className="w-16 text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
                       <span className="w-24">Qty: {h.quantity}</span>
                       <span className="w-32">Avg: ${formatNum(h.avg_buy_price)}</span>
@@ -201,6 +225,7 @@ export function TradeView(props: TradeViewProps) {
                 {positionsWithPnL.map(p => (
                   <div key={p.id} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
                     <span className={`w-16 font-semibold ${p.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>{p.direction} {p.leverage}x</span>
+                    <CoinIcon symbol={p.symbol} size={16} />
                     <span className="w-16 text-gray-300">{p.symbol.replace('USDT', '')}</span>
                     <span className="w-24">Size: ${formatNum(p.size_usd)}</span>
                     <span className="w-28">Entry: ${formatNum(p.entry_price)}</span>
@@ -226,7 +251,10 @@ export function TradeView(props: TradeViewProps) {
                 className={`flex-1 py-1.5 rounded text-xs font-medium transition ${tradeMode === 'leveraged' ? 'bg-[#1a1a25] text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>⚡ Leveraged</button>
             </div>
 
-            <h3 className="text-sm font-medium mb-3">{tradeMode === 'spot' ? 'Trade' : 'Leverage'} {selectedSymbol.replace('USDT', '')}</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <CoinIcon symbol={selectedSymbol} size={20} />
+              <h3 className="text-sm font-medium">{tradeMode === 'spot' ? 'Trade' : 'Leverage'} {selectedSymbol.replace('USDT', '')}</h3>
+            </div>
             {ticker && <div className="text-2xl font-bold font-mono mb-4">${formatNum(parseFloat(ticker.lastPrice))}</div>}
 
             {tradeMode === 'spot' ? (

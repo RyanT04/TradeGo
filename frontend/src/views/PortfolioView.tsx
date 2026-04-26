@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { formatNum } from '../utils'
+import { CoinIcon } from '../components/CoinIcon'
 import type { Ticker, Holding, TradeLog, Position } from '../types'
 
 interface PortfolioViewProps {
@@ -14,7 +15,6 @@ interface PortfolioViewProps {
 export function PortfolioView({ tickers, balance, holdings, trades, openPositions, setSelectedSymbol }: PortfolioViewProps) {
   const navigate = useNavigate()
 
-  // Compute portfolio metrics
   const holdingsValue = holdings.reduce((sum, h) => {
     const cp = tickers[h.symbol] ? parseFloat(tickers[h.symbol].lastPrice) : 0
     return sum + h.quantity * cp
@@ -35,12 +35,9 @@ export function PortfolioView({ tickers, balance, holdings, trades, openPosition
     return sum + livePnL
   }, 0)
 
-  // Total portfolio value: cash + holdings (at market) + open position margin + unrealised PnL
   const totalValue = balance + holdingsValue + positionsMargin + positionsPnL
   const totalUnrealisedPnL = holdingsPnL + positionsPnL
 
-  // Realised PnL — sum of all completed sells minus their cost basis
-  // Approximation from trade log: we use total flowing in (sells) minus flowing out (buys)
   const realisedFromTrades = trades.reduce((sum, t) => {
     return t.side === 'SELL' ? sum + t.total : sum - t.total
   }, 0)
@@ -101,6 +98,7 @@ export function PortfolioView({ tickers, balance, holdings, trades, openPosition
               const pnlPct = h.avg_buy_price > 0 ? ((cp - h.avg_buy_price) / h.avg_buy_price) * 100 : 0
               return (
                 <div key={h.symbol} className="flex items-center gap-3 bg-[#12121a] border border-[#1a1a25] rounded-lg px-4 py-3 text-sm font-mono">
+                  <CoinIcon symbol={h.symbol} size={20} />
                   <span className="w-20 text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
                   <span className="w-32">Qty: {h.quantity}</span>
                   <span className="w-40">Avg: ${formatNum(h.avg_buy_price)}</span>
@@ -138,6 +136,7 @@ export function PortfolioView({ tickers, balance, holdings, trades, openPosition
                   <span className={`w-20 font-semibold ${p.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>
                     {p.direction} {p.leverage}x
                   </span>
+                  <CoinIcon symbol={p.symbol} size={20} />
                   <span className="w-20 text-gray-300">{p.symbol.replace('USDT', '')}</span>
                   <span className="w-32">Size: ${formatNum(p.size_usd)}</span>
                   <span className="w-32">Margin: ${formatNum(p.margin_usd)}</span>
@@ -163,6 +162,7 @@ export function PortfolioView({ tickers, balance, holdings, trades, openPosition
             {trades.slice(0, 20).map((t, i) => (
               <div key={i} className="flex items-center gap-3 bg-[#12121a] border border-[#1a1a25] rounded-lg px-4 py-2.5 text-xs font-mono">
                 <span className={`w-12 font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
+                <CoinIcon symbol={t.symbol} size={16} />
                 <span className="w-20 text-gray-300">{t.symbol.replace('USDT', '')}</span>
                 <span className="w-24">{t.quantity}</span>
                 <span className="w-32">@ ${t.price.toLocaleString()}</span>

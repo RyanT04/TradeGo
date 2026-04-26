@@ -1,8 +1,12 @@
 package market
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,16 +21,22 @@ type Ticker struct {
 	Low       string    `json:"lowPrice24h"`
 	Volume    string    `json:"volume24h"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	Source    string    `json:"source"` // "ws" or "rest"
 }
 
 type BybitClient struct {
 	mu      sync.RWMutex
 	tickers map[string]*Ticker
+
+	httpClient *http.Client
 }
 
 func NewBybitClient() *BybitClient {
 	return &BybitClient{
 		tickers: make(map[string]*Ticker),
+		httpClient: &http.Client{
+			Timeout: 4 * time.Second,
+		},
 	}
 }
 
@@ -46,9 +56,14 @@ func (b *BybitClient) GetAllTickers() map[string]*Ticker {
 	return copy
 }
 
+// Connect starts the WebSocket subscription for the hot symbols
+// AND a REST poller for the full set of USDT pairs.
 func (b *BybitClient) Connect(symbols []string) {
 	go b.run(symbols)
+	go b.pollRESTLoop()
 }
+
+// ── WebSocket (live, sub-second updates for hot coins) ──
 
 func (b *BybitClient) run(symbols []string) {
 	for {
@@ -108,11 +123,11 @@ func (b *BybitClient) connectAndListen(symbols []string) error {
 		if err != nil {
 			return err
 		}
-		b.handleMessage(msg)
+		b.handleWSMessage(msg)
 	}
 }
 
-func (b *BybitClient) handleMessage(msg []byte) {
+func (b *BybitClient) handleWSMessage(msg []byte) {
 	var raw struct {
 		Topic string          `json:"topic"`
 		Data  json.RawMessage `json:"data"`
@@ -126,8 +141,128 @@ func (b *BybitClient) handleMessage(msg []byte) {
 		return
 	}
 	ticker.UpdatedAt = time.Now()
+	ticker.Source = "ws"
 
 	b.mu.Lock()
 	b.tickers[ticker.Symbol] = &ticker
 	b.mu.Unlock()
+}
+
+// ── REST poller (every 5s, fills in the long tail of ~400 USDT pairs) ──
+
+type bybitRESTResponse struct {
+	RetCode int    `json:"retCode"`
+	RetMsg  string `json:"retMsg"`
+	Result  struct {
+		Category string `json:"category"`
+		List     []struct {
+			Symbol       string `json:"symbol"`
+			LastPrice    string `json:"lastPrice"`
+			PriceChange  string `json:"price24hPcnt"`
+			HighPrice24h string `json:"highPrice24h"`
+			LowPrice24h  string `json:"lowPrice24h"`
+			Volume24h    string `json:"volume24h"`
+		} `json:"list"`
+	} `json:"result"`
+}
+
+func (b *BybitClient) pollRESTLoop() {
+	// Wait briefly so the WebSocket has a chance to populate first
+	time.Sleep(2 * time.Second)
+
+	// Initial fetch immediately, then on a ticker
+	b.pollRESTOnce()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		b.pollRESTOnce()
+	}
+}
+
+func (b *BybitClient) pollRESTOnce() {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		"https://api.bybit.com/v5/market/tickers?category=spot", nil)
+	if err != nil {
+		log.Printf("bybit REST: failed to build request: %v", err)
+		return
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		log.Printf("bybit REST: request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("bybit REST: HTTP %d", resp.StatusCode)
+		return
+	}
+
+	var out bybitRESTResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		log.Printf("bybit REST: decode failed: %v", err)
+		return
+	}
+	if out.RetCode != 0 {
+		log.Printf("bybit REST: error %d: %s", out.RetCode, out.RetMsg)
+		return
+	}
+
+	now := time.Now()
+	staleAfter := 4 * time.Second // WebSocket data is fresher than this
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, item := range out.Result.List {
+		// Only USDT pairs — skip USDC, BTC-quoted, etc
+		if !strings.HasSuffix(item.Symbol, "USDT") {
+			continue
+		}
+
+		// If WebSocket recently updated this symbol, skip — WS data wins
+		if existing, ok := b.tickers[item.Symbol]; ok {
+			if existing.Source == "ws" && now.Sub(existing.UpdatedAt) < staleAfter {
+				continue
+			}
+		}
+
+		b.tickers[item.Symbol] = &Ticker{
+			Symbol:    item.Symbol,
+			Price:     item.LastPrice,
+			Change:    item.PriceChange,
+			High:      item.HighPrice24h,
+			Low:       item.LowPrice24h,
+			Volume:    item.Volume24h,
+			UpdatedAt: now,
+			Source:    "rest",
+		}
+	}
+
+	// Stats every minute (avoid log spam)
+	if time.Now().Second() < 5 {
+		wsCount := 0
+		restCount := 0
+		for _, t := range b.tickers {
+			if t.Source == "ws" {
+				wsCount++
+			} else {
+				restCount++
+			}
+		}
+		log.Printf("bybit tickers: %d total (%d ws, %d rest)", len(b.tickers), wsCount, restCount)
+	}
+}
+
+// Helper to format the count for logs (used elsewhere)
+func (b *BybitClient) Count() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return fmt.Sprintf("%d", len(b.tickers))
 }
