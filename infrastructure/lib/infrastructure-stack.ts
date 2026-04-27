@@ -7,7 +7,12 @@ import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as ecrAssets from 'aws-cdk-lib/aws-ecr-assets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as path from 'path';
+
+const DOMAIN_NAME = 'trade-go.tech';
+const WWW_DOMAIN = 'www.trade-go.tech';
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -55,25 +60,46 @@ export class InfrastructureStack extends cdk.Stack {
       },
     });
 
+    // ── ACM certificate (DNS-validated) ──
+    // We don't have a Route 53 hosted zone (.tech registered elsewhere),
+    // so we use validation: CertificateValidation.fromDns() WITHOUT a hostedZone.
+    // CDK will pause on first deploy and CloudFormation will sit in CREATE_IN_PROGRESS
+    // while waiting for DNS validation records to be added at .tech.
+    // The records to add show up in the AWS console (Certificate Manager) — copy them
+    // to the .tech DNS panel as CNAME records, and CloudFormation will resume.
+    const certificate = new acm.Certificate(this, 'TradeGoCert', {
+      domainName: DOMAIN_NAME,
+      subjectAlternativeNames: [WWW_DOMAIN],
+      validation: acm.CertificateValidation.fromDns(),
+    });
+
     // ── Build the Go Docker image ──
     const dockerImage = new ecrAssets.DockerImageAsset(this, 'TradeGoImage', {
       directory: path.join(__dirname, '..', '..'),
       file: 'Dockerfile',
     });
 
-    // ── Fargate service ──
+    // ── Fargate service with HTTPS ──
     const fargateService = new ecsPatterns.ApplicationLoadBalancedFargateService(
-        this,
-        'TradeGoService',
-        {
-          cluster,
-          cpu: 256,
-          memoryLimitMiB: 512,
-          desiredCount: 1,
-          publicLoadBalancer: true,
-          listenerPort: 80,
-          enableExecuteCommand: true,  // ← add this
-          taskImageOptions: {
+      this,
+      'TradeGoService',
+      {
+        cluster,
+        cpu: 256,
+        memoryLimitMiB: 512,
+        desiredCount: 1,
+        publicLoadBalancer: true,
+        enableExecuteCommand: true,
+
+        // HTTPS configuration
+        protocol: elbv2.ApplicationProtocol.HTTPS,
+        listenerPort: 443,
+        certificate,
+
+        // Auto-create an HTTP listener on 80 that redirects to HTTPS on 443
+        redirectHTTP: true,
+
+        taskImageOptions: {
           image: ecs.ContainerImage.fromDockerImageAsset(dockerImage),
           containerPort: 8080,
           environment: {
@@ -98,15 +124,22 @@ export class InfrastructureStack extends cdk.Stack {
     // Allow Fargate -> RDS
     database.connections.allowFrom(fargateService.service, ec2.Port.tcp(5432));
 
-    // Health check
+    // Health check (target the API path now)
     fargateService.targetGroup.configureHealthCheck({
-      path: '/health',
+      path: '/api/health',
       healthyHttpCodes: '200',
       interval: cdk.Duration.seconds(30),
     });
 
-    new cdk.CfnOutput(this, 'LoadBalancerURL', {
-      value: `http://${fargateService.loadBalancer.loadBalancerDnsName}`,
+    // ── Outputs ──
+    new cdk.CfnOutput(this, 'AppURL', {
+      value: `https://${DOMAIN_NAME}`,
+      description: 'Once DNS is pointed at the ALB, the app is reachable here',
+    });
+
+    new cdk.CfnOutput(this, 'LoadBalancerDNS', {
+      value: fargateService.loadBalancer.loadBalancerDnsName,
+      description: 'Create a CNAME record at .tech: trade-go.tech → THIS VALUE',
     });
 
     new cdk.CfnOutput(this, 'DatabaseEndpoint', {

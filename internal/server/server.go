@@ -65,11 +65,11 @@ func New(cfg *config.Config) *Server {
 	bybit := market.NewBybitClient()
 	bybit.Connect(defaultSymbols)
 
-	// Initialize matching engine and start background liquidation worker
+	// Matching engine + background liquidation worker
 	engine := matching.NewEngine(db, bybit)
 	engine.StartLiquidationWorker()
 
-	// Initialize handlers
+	// Handlers
 	marketHandler := handler.NewMarketHandler(bybit)
 	authHandler := handler.NewAuthHandler(db, jwtService)
 	orderHandler := handler.NewOrderHandler(db, engine)
@@ -82,6 +82,7 @@ func New(cfg *config.Config) *Server {
 		db:     db,
 	}
 	s.routes(marketHandler, authHandler, orderHandler, favouritesHandler, portfolioHandler, jwtService)
+	s.serveStatic() // SPA fallback for non-API routes
 	return s
 }
 
@@ -93,42 +94,49 @@ func (s *Server) routes(
 	ph *handler.PortfolioHandler,
 	jwtService *auth.JWTService,
 ) {
-	s.router.GET("/health", handler.NewHealthHandler(s.db))
-	s.router.GET("/ticker", mh.GetTicker)
-	s.router.GET("/tickers", mh.GetAllTickers)
-	s.router.GET("/kline", handler.GetKline)
-
-	s.router.POST("/auth/register", ah.Register)
-	s.router.POST("/auth/login", ah.Login)
-
-	// Protected routes
-	protected := s.router.Group("/")
-	protected.Use(auth.AuthMiddleware(jwtService))
+	// All API routes are namespaced under /api
+	api := s.router.Group("/api")
 	{
-		protected.GET("/auth/me", ah.Me)
-		protected.PATCH("/auth/profile", ah.UpdateProfile)
-		protected.PATCH("/auth/balance", ah.SetStartingBalance)
-		protected.POST("/auth/change-password", ah.ChangePassword)
+		api.GET("/health", handler.NewHealthHandler(s.db))
+		api.GET("/ticker", mh.GetTicker)
+		api.GET("/tickers", mh.GetAllTickers)
+		api.GET("/kline", handler.GetKline)
 
-		protected.POST("/order", oh.PlaceOrder)
-		protected.GET("/orders", oh.GetOrders)
-		protected.GET("/holdings", oh.GetHoldings)
-		protected.GET("/balance", oh.GetBalance)
-		protected.GET("/trades", oh.GetTrades)
+		api.POST("/auth/register", ah.Register)
+		api.POST("/auth/login", ah.Login)
 
-		// Leveraged trading
-		protected.POST("/leveraged/open", oh.OpenLeveraged)
-		protected.POST("/leveraged/close/:id", oh.CloseLeveraged)
-		protected.GET("/leveraged", oh.GetLeveragedPositions)
+		// Protected routes
+		protected := api.Group("/")
+		protected.Use(auth.AuthMiddleware(jwtService))
+		{
+			protected.GET("/auth/me", ah.Me)
+			protected.PATCH("/auth/profile", ah.UpdateProfile)
+			protected.PATCH("/auth/balance", ah.SetStartingBalance)
+			protected.POST("/auth/change-password", ah.ChangePassword)
 
-		// Favourites
-		protected.GET("/favourites", fh.GetFavourites)
-		protected.POST("/favourites", fh.AddFavourite)
-		protected.DELETE("/favourites/:symbol", fh.RemoveFavourite)
+			protected.POST("/order", oh.PlaceOrder)
+			protected.GET("/orders", oh.GetOrders)
+			protected.GET("/holdings", oh.GetHoldings)
+			protected.GET("/balance", oh.GetBalance)
+			protected.GET("/trades", oh.GetTrades)
 
-		// Portfolio
-		protected.POST("/portfolio/reset", ph.Reset)
+			// Leveraged trading
+			protected.POST("/leveraged/open", oh.OpenLeveraged)
+			protected.POST("/leveraged/close/:id", oh.CloseLeveraged)
+			protected.GET("/leveraged", oh.GetLeveragedPositions)
+
+			// Favourites
+			protected.GET("/favourites", fh.GetFavourites)
+			protected.POST("/favourites", fh.AddFavourite)
+			protected.DELETE("/favourites/:symbol", fh.RemoveFavourite)
+
+			// Portfolio
+			protected.POST("/portfolio/reset", ph.Reset)
+		}
 	}
+
+	// Backward-compatible health check at the root, useful for ALB/health probes
+	s.router.GET("/health", handler.NewHealthHandler(s.db))
 }
 
 func (s *Server) Start() error {

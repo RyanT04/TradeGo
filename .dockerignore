@@ -1,6 +1,3 @@
-# Frontend (not needed in Go container)
-frontend/
-
 # CDK infrastructure
 infrastructure/
 
@@ -28,3 +25,8 @@ docs/
 *.out
 tradego
 *.log
+
+# Don't ship the frontend dist back into the build context
+# (Dockerfile builds it fresh in the frontend-builder stage)
+frontend/dist/
+frontend/.vite/

@@ -83,11 +83,102 @@ export function TradeView(props: TradeViewProps) {
     !coinSearch || t.symbol.toLowerCase().includes(coinSearch.toLowerCase())
   )
 
+  const tradePanel = (
+    <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
+      <div className="flex gap-1 mb-4 bg-[#0a0a0f] p-1 rounded-lg">
+        <button onClick={() => setTradeMode('spot')}
+          className={`flex-1 py-1.5 rounded text-xs font-medium transition ${tradeMode === 'spot' ? 'bg-[#1a1a25] text-white' : 'text-gray-500 hover:text-gray-300'}`}>Spot</button>
+        <button onClick={() => setTradeMode('leveraged')}
+          className={`flex-1 py-1.5 rounded text-xs font-medium transition ${tradeMode === 'leveraged' ? 'bg-[#1a1a25] text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>⚡ Leveraged</button>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3">
+        <CoinIcon symbol={selectedSymbol} size={20} />
+        <h3 className="text-sm font-medium">{tradeMode === 'spot' ? 'Trade' : 'Leverage'} {selectedSymbol.replace('USDT', '')}</h3>
+      </div>
+      {ticker && <div className="text-2xl font-bold font-mono mb-4">${formatNum(parseFloat(ticker.lastPrice))}</div>}
+
+      {tradeMode === 'spot' ? (
+        <>
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 block mb-1">Quantity</label>
+            <input type="number" step="any" value={tradeQty} onChange={e => setTradeQty(e.target.value)}
+              className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-800 transition" />
+          </div>
+          {ticker && (
+            <div className="text-xs text-gray-600 mb-4">
+              Total: <span className="text-gray-400">${(parseFloat(tradeQty || '0') * parseFloat(ticker.lastPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <button onClick={() => handleSpotTrade('BUY')} disabled={loading}
+              className="py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Buy</button>
+            <button onClick={() => handleSpotTrade('SELL')} disabled={loading}
+              className="py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Sell</button>
+          </div>
+          <div className="flex gap-1">
+            {['0.001', '0.01', '0.1', '1'].map(q => (
+              <button key={q} onClick={() => setTradeQty(q)}
+                className={`flex-1 py-1.5 rounded text-xs transition ${tradeQty === q ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300 border border-[#1a1a25]'}`}>{q}</button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <button onClick={() => setLevDirection('LONG')}
+              className={`py-2 rounded-lg text-sm font-medium transition ${levDirection === 'LONG' ? 'bg-emerald-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>Long ↑</button>
+            <button onClick={() => setLevDirection('SHORT')}
+              className={`py-2 rounded-lg text-sm font-medium transition ${levDirection === 'SHORT' ? 'bg-red-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>Short ↓</button>
+          </div>
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 block mb-1">Leverage</label>
+            <div className="flex flex-wrap gap-1">
+              {LEVERAGE_OPTIONS.map(l => (
+                <button key={l} onClick={() => setLevLeverage(l)}
+                  className={`flex-1 min-w-[3rem] py-1.5 rounded text-xs font-medium transition ${levLeverage === l ? 'bg-amber-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>{l}x</button>
+              ))}
+            </div>
+          </div>
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 block mb-1">Margin (USD)</label>
+            <input type="number" step="any" value={levMargin} onChange={e => setLevMargin(e.target.value)}
+              className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-amber-800 transition" />
+          </div>
+          {levPreview && (
+            <div className="bg-[#0a0a0f] border border-[#1a1a25] rounded-lg p-3 mb-3 text-xs space-y-1">
+              <div className="flex justify-between"><span className="text-gray-500">Position size</span><span className="text-white font-mono">${formatNum(levPreview.size)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Entry</span><span className="text-white font-mono">${formatNum(levPreview.price)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Liquidation</span><span className="text-red-400 font-mono">${formatNum(levPreview.liqPrice)}</span></div>
+            </div>
+          )}
+          <button onClick={handleLeveragedOpen} disabled={loading}
+            className={`w-full py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50 ${levDirection === 'LONG' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
+            Open {levDirection} {levLeverage}x
+          </button>
+        </>
+      )}
+    </div>
+  )
+
+  const performanceCard = liveTrades.length > 0 && (
+    <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
+      <h3 className="text-sm font-medium mb-3">Performance</h3>
+      <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 text-center">
+        <div><div className="text-amber-400 font-mono text-lg">{avgLatency.toLocaleString()}</div><div className="text-xs text-gray-600">Avg µs</div></div>
+        <div><div className="text-emerald-400 font-mono text-lg">{Math.min(...liveTrades.map(t => t.latency_us)).toLocaleString()}</div><div className="text-xs text-gray-600">Min µs</div></div>
+        <div><div className="text-red-400 font-mono text-lg">{Math.max(...liveTrades.map(t => t.latency_us)).toLocaleString()}</div><div className="text-xs text-gray-600">Max µs</div></div>
+        <div><div className="text-white font-mono text-lg">{liveTrades.length}</div><div className="text-xs text-gray-600">Trades</div></div>
+      </div>
+    </div>
+  )
+
   return (
-    <div className="p-4">
+    <div className="p-3 lg:p-4">
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3">
-          <div className="flex items-baseline gap-3 mb-2 px-1 relative">
+        {/* Main column — chart and tabs */}
+        <div className="lg:col-span-3 order-2 lg:order-1">
+          <div className="flex flex-wrap items-baseline gap-2 lg:gap-3 mb-2 px-1 relative">
             <div className="relative">
               <button onClick={() => { setCoinOpen(!coinOpen); setCoinSearch('') }}
                 className="text-xl font-bold flex items-center gap-2 hover:text-emerald-400 transition">
@@ -98,7 +189,7 @@ export function TradeView(props: TradeViewProps) {
                 </svg>
               </button>
               {coinOpen && (
-                <div className="absolute top-full left-0 mt-1 w-80 max-h-[28rem] bg-[#12121a] border border-[#1a1a25] rounded-lg shadow-2xl z-50 flex flex-col">
+                <div className="absolute top-full left-0 mt-1 w-72 sm:w-80 max-h-[28rem] bg-[#12121a] border border-[#1a1a25] rounded-lg shadow-2xl z-50 flex flex-col">
                   <input autoFocus type="text" placeholder="Search..." value={coinSearch}
                     onChange={e => setCoinSearch(e.target.value)}
                     className="m-2 px-3 py-1.5 bg-[#0a0a0f] border border-[#1a1a25] rounded text-xs focus:outline-none focus:border-emerald-600 transition" />
@@ -132,14 +223,15 @@ export function TradeView(props: TradeViewProps) {
               <>
                 <span className="text-xl font-mono">${formatNum(parseFloat(ticker.lastPrice))}</span>
                 <span className={`text-sm ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>{isUp ? '+' : ''}{pct.toFixed(2)}%</span>
-                <span className="text-xs text-gray-600">H: ${formatNum(parseFloat(ticker.highPrice24h))}</span>
-                <span className="text-xs text-gray-600">L: ${formatNum(parseFloat(ticker.lowPrice24h))}</span>
-                <span className="text-xs text-gray-600">Vol: {parseFloat(ticker.volume24h).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                {/* Hide volume / high / low on mobile to save space */}
+                <span className="hidden md:inline text-xs text-gray-600">H: ${formatNum(parseFloat(ticker.highPrice24h))}</span>
+                <span className="hidden md:inline text-xs text-gray-600">L: ${formatNum(parseFloat(ticker.lowPrice24h))}</span>
+                <span className="hidden lg:inline text-xs text-gray-600">Vol: {parseFloat(ticker.volume24h).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
               </>
             )}
           </div>
 
-          <div className="flex gap-1 mb-2">
+          <div className="flex flex-wrap gap-1 mb-2">
             {INTERVALS.map(iv => (
               <button key={iv.value} onClick={() => setInterval(iv.value)}
                 className={`px-3 py-1 rounded text-xs transition ${interval === iv.value ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300'}`}>
@@ -153,25 +245,25 @@ export function TradeView(props: TradeViewProps) {
           </div>
 
           <div className="mt-4">
-            <div className="flex gap-4 border-b border-[#1a1a25] mb-3">
+            <div className="flex gap-2 sm:gap-4 border-b border-[#1a1a25] mb-3 overflow-x-auto">
               <button onClick={() => setTab('trades')}
-                className={`pb-2 text-sm transition ${tab === 'trades' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
+                className={`pb-2 text-sm transition whitespace-nowrap ${tab === 'trades' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
                 Trade log {trades.length > 0 && <span className="text-gray-600 ml-1">({trades.length})</span>}
               </button>
               <button onClick={() => setTab('holdings')}
-                className={`pb-2 text-sm transition ${tab === 'holdings' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
+                className={`pb-2 text-sm transition whitespace-nowrap ${tab === 'holdings' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
                 Holdings {holdings.length > 0 && <span className="text-gray-600 ml-1">({holdings.length})</span>}
               </button>
               <button onClick={() => setTab('positions')}
-                className={`pb-2 text-sm transition ${tab === 'positions' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
-                Positions {openPositions.length > 0 && <span className="text-amber-400 ml-1">({openPositions.length} open)</span>}
+                className={`pb-2 text-sm transition whitespace-nowrap ${tab === 'positions' ? 'text-white border-b border-emerald-400' : 'text-gray-600 hover:text-gray-300'}`}>
+                Positions {openPositions.length > 0 && <span className="text-amber-400 ml-1">({openPositions.length})</span>}
               </button>
             </div>
 
             {tab === 'trades' && (
               <>
                 {liveTrades.length > 0 && (
-                  <div className="flex gap-4 text-xs mb-2 text-gray-500">
+                  <div className="flex flex-wrap gap-3 sm:gap-4 text-xs mb-2 text-gray-500">
                     <span>Avg: <span className="text-amber-400 font-mono">{avgLatency.toLocaleString()} µs</span></span>
                     <span>Min: <span className="text-emerald-400 font-mono">{Math.min(...liveTrades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
                     <span>Max: <span className="text-red-400 font-mono">{Math.max(...liveTrades.map(t => t.latency_us)).toLocaleString()} µs</span></span>
@@ -180,15 +272,30 @@ export function TradeView(props: TradeViewProps) {
                 <div className="space-y-1 max-h-60 overflow-y-auto">
                   {trades.length === 0 && <p className="text-sm text-gray-700">No trades yet</p>}
                   {trades.map((t, i) => (
-                    <div key={i} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
-                      <span className={`w-10 font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
-                      <CoinIcon symbol={t.symbol} size={16} />
-                      <span className="w-16 text-gray-300">{t.symbol.replace('USDT', '')}</span>
-                      <span className="w-20">{t.quantity}</span>
-                      <span className="w-28">@ ${t.price.toLocaleString()}</span>
-                      <span className="w-28">${t.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      <span className="ml-auto text-amber-400">{t.latency_us > 0 ? `${t.latency_us.toLocaleString()} µs` : '—'}</span>
-                      <span className="text-gray-700 w-16 text-right">{t.timestamp}</span>
+                    <div key={i} className="bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                      {/* Desktop row */}
+                      <div className="hidden sm:flex items-center gap-3">
+                        <span className={`w-10 font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
+                        <CoinIcon symbol={t.symbol} size={16} />
+                        <span className="w-16 text-gray-300">{t.symbol.replace('USDT', '')}</span>
+                        <span className="w-20">{t.quantity}</span>
+                        <span className="w-28">@ ${t.price.toLocaleString()}</span>
+                        <span className="w-28">${t.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        <span className="ml-auto text-amber-400">{t.latency_us > 0 ? `${t.latency_us.toLocaleString()} µs` : '—'}</span>
+                        <span className="text-gray-700 w-16 text-right">{t.timestamp}</span>
+                      </div>
+                      {/* Mobile compact */}
+                      <div className="sm:hidden">
+                        <div className="flex items-center gap-2">
+                          <CoinIcon symbol={t.symbol} size={14} />
+                          <span className={`font-semibold ${t.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.side}</span>
+                          <span className="text-gray-300">{t.symbol.replace('USDT', '')}</span>
+                          <span className="ml-auto text-amber-400 text-[10px]">{t.latency_us > 0 ? `${t.latency_us.toLocaleString()} µs` : '—'}</span>
+                        </div>
+                        <div className="text-gray-500 mt-0.5">
+                          {t.quantity} @ ${t.price.toLocaleString()} = ${t.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -204,15 +311,27 @@ export function TradeView(props: TradeViewProps) {
                   const pnl = (cp - h.avg_buy_price) * h.quantity
                   const pnlPct = h.avg_buy_price > 0 ? ((cp - h.avg_buy_price) / h.avg_buy_price) * 100 : 0
                   return (
-                    <div key={h.symbol} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
-                      <CoinIcon symbol={h.symbol} size={16} />
-                      <span className="w-16 text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
-                      <span className="w-24">Qty: {h.quantity}</span>
-                      <span className="w-32">Avg: ${formatNum(h.avg_buy_price)}</span>
-                      <span className="w-28">Value: ${formatNum(value)}</span>
-                      <span className={`ml-auto ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)
-                      </span>
+                    <div key={h.symbol} className="bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                      <div className="hidden sm:flex items-center gap-3">
+                        <CoinIcon symbol={h.symbol} size={16} />
+                        <span className="w-16 text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
+                        <span className="w-24">Qty: {h.quantity}</span>
+                        <span className="w-32">Avg: ${formatNum(h.avg_buy_price)}</span>
+                        <span className="w-28">Value: ${formatNum(value)}</span>
+                        <span className={`ml-auto ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)
+                        </span>
+                      </div>
+                      <div className="sm:hidden">
+                        <div className="flex items-center gap-2">
+                          <CoinIcon symbol={h.symbol} size={14} />
+                          <span className="text-gray-300 font-semibold">{h.symbol.replace('USDT', '')}</span>
+                          <span className={`ml-auto ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-gray-500 mt-0.5">{h.quantity} @ avg ${formatNum(h.avg_buy_price)} → ${formatNum(value)}</div>
+                      </div>
                     </div>
                   )
                 })}
@@ -223,18 +342,35 @@ export function TradeView(props: TradeViewProps) {
               <div className="space-y-1">
                 {positionsWithPnL.length === 0 && <p className="text-sm text-gray-700">No open positions</p>}
                 {positionsWithPnL.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
-                    <span className={`w-16 font-semibold ${p.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>{p.direction} {p.leverage}x</span>
-                    <CoinIcon symbol={p.symbol} size={16} />
-                    <span className="w-16 text-gray-300">{p.symbol.replace('USDT', '')}</span>
-                    <span className="w-24">Size: ${formatNum(p.size_usd)}</span>
-                    <span className="w-28">Entry: ${formatNum(p.entry_price)}</span>
-                    <span className="w-32 text-red-400">Liq: ${formatNum(p.liquidation_price)}</span>
-                    <span className={`w-28 ${p.livePnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {p.livePnL >= 0 ? '+' : ''}${p.livePnL.toFixed(2)} ({p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(1)}%)
-                    </span>
-                    <button onClick={() => handleClosePosition(p.id)}
-                      className="ml-auto px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs">Close</button>
+                  <div key={p.id} className="bg-[#12121a] rounded px-3 py-2 text-xs font-mono">
+                    <div className="hidden md:flex items-center gap-3">
+                      <span className={`w-16 font-semibold ${p.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>{p.direction} {p.leverage}x</span>
+                      <CoinIcon symbol={p.symbol} size={16} />
+                      <span className="w-16 text-gray-300">{p.symbol.replace('USDT', '')}</span>
+                      <span className="w-24">Size: ${formatNum(p.size_usd)}</span>
+                      <span className="w-28">Entry: ${formatNum(p.entry_price)}</span>
+                      <span className="w-32 text-red-400">Liq: ${formatNum(p.liquidation_price)}</span>
+                      <span className={`w-28 ${p.livePnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {p.livePnL >= 0 ? '+' : ''}${p.livePnL.toFixed(2)} ({p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(1)}%)
+                      </span>
+                      <button onClick={() => handleClosePosition(p.id)}
+                        className="ml-auto px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs">Close</button>
+                    </div>
+                    <div className="md:hidden space-y-1">
+                      <div className="flex items-center gap-2">
+                        <CoinIcon symbol={p.symbol} size={14} />
+                        <span className="text-gray-300 font-semibold">{p.symbol.replace('USDT', '')}</span>
+                        <span className={`text-xs font-semibold ${p.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>{p.direction} {p.leverage}x</span>
+                        <span className={`ml-auto ${p.livePnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {p.livePnL >= 0 ? '+' : ''}${p.livePnL.toFixed(2)} ({p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div className="text-gray-500">
+                        Size ${formatNum(p.size_usd)} · Entry ${formatNum(p.entry_price)} · <span className="text-red-400">Liq ${formatNum(p.liquidation_price)}</span>
+                      </div>
+                      <button onClick={() => handleClosePosition(p.id)}
+                        className="w-full mt-1 px-2 py-1.5 bg-red-600 hover:bg-red-700 rounded text-white text-xs">Close position</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -242,94 +378,10 @@ export function TradeView(props: TradeViewProps) {
           </div>
         </div>
 
-        <div>
-          <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
-            <div className="flex gap-1 mb-4 bg-[#0a0a0f] p-1 rounded-lg">
-              <button onClick={() => setTradeMode('spot')}
-                className={`flex-1 py-1.5 rounded text-xs font-medium transition ${tradeMode === 'spot' ? 'bg-[#1a1a25] text-white' : 'text-gray-500 hover:text-gray-300'}`}>Spot</button>
-              <button onClick={() => setTradeMode('leveraged')}
-                className={`flex-1 py-1.5 rounded text-xs font-medium transition ${tradeMode === 'leveraged' ? 'bg-[#1a1a25] text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}>⚡ Leveraged</button>
-            </div>
-
-            <div className="flex items-center gap-2 mb-3">
-              <CoinIcon symbol={selectedSymbol} size={20} />
-              <h3 className="text-sm font-medium">{tradeMode === 'spot' ? 'Trade' : 'Leverage'} {selectedSymbol.replace('USDT', '')}</h3>
-            </div>
-            {ticker && <div className="text-2xl font-bold font-mono mb-4">${formatNum(parseFloat(ticker.lastPrice))}</div>}
-
-            {tradeMode === 'spot' ? (
-              <>
-                <div className="mb-3">
-                  <label className="text-xs text-gray-500 block mb-1">Quantity</label>
-                  <input type="number" step="any" value={tradeQty} onChange={e => setTradeQty(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-800 transition" />
-                </div>
-                {ticker && (
-                  <div className="text-xs text-gray-600 mb-4">
-                    Total: <span className="text-gray-400">${(parseFloat(tradeQty || '0') * parseFloat(ticker.lastPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  <button onClick={() => handleSpotTrade('BUY')} disabled={loading}
-                    className="py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Buy</button>
-                  <button onClick={() => handleSpotTrade('SELL')} disabled={loading}
-                    className="py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Sell</button>
-                </div>
-                <div className="flex gap-1">
-                  {['0.001', '0.01', '0.1', '1'].map(q => (
-                    <button key={q} onClick={() => setTradeQty(q)}
-                      className={`flex-1 py-1.5 rounded text-xs transition ${tradeQty === q ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300 border border-[#1a1a25]'}`}>{q}</button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button onClick={() => setLevDirection('LONG')}
-                    className={`py-2 rounded-lg text-sm font-medium transition ${levDirection === 'LONG' ? 'bg-emerald-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>Long ↑</button>
-                  <button onClick={() => setLevDirection('SHORT')}
-                    className={`py-2 rounded-lg text-sm font-medium transition ${levDirection === 'SHORT' ? 'bg-red-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>Short ↓</button>
-                </div>
-                <div className="mb-3">
-                  <label className="text-xs text-gray-500 block mb-1">Leverage</label>
-                  <div className="flex gap-1">
-                    {LEVERAGE_OPTIONS.map(l => (
-                      <button key={l} onClick={() => setLevLeverage(l)}
-                        className={`flex-1 py-1.5 rounded text-xs font-medium transition ${levLeverage === l ? 'bg-amber-600 text-white' : 'bg-[#0a0a0f] border border-[#1a1a25] text-gray-400 hover:text-white'}`}>{l}x</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mb-3">
-                  <label className="text-xs text-gray-500 block mb-1">Margin (USD)</label>
-                  <input type="number" step="any" value={levMargin} onChange={e => setLevMargin(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-amber-800 transition" />
-                </div>
-                {levPreview && (
-                  <div className="bg-[#0a0a0f] border border-[#1a1a25] rounded-lg p-3 mb-3 text-xs space-y-1">
-                    <div className="flex justify-between"><span className="text-gray-500">Position size</span><span className="text-white font-mono">${formatNum(levPreview.size)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Entry</span><span className="text-white font-mono">${formatNum(levPreview.price)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Liquidation</span><span className="text-red-400 font-mono">${formatNum(levPreview.liqPrice)}</span></div>
-                  </div>
-                )}
-                <button onClick={handleLeveragedOpen} disabled={loading}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50 ${levDirection === 'LONG' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                  Open {levDirection} {levLeverage}x
-                </button>
-              </>
-            )}
-          </div>
-
-          {liveTrades.length > 0 && (
-            <div className="mt-4 bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
-              <h3 className="text-sm font-medium mb-3">Performance</h3>
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div><div className="text-amber-400 font-mono text-lg">{avgLatency.toLocaleString()}</div><div className="text-xs text-gray-600">Avg µs</div></div>
-                <div><div className="text-emerald-400 font-mono text-lg">{Math.min(...liveTrades.map(t => t.latency_us)).toLocaleString()}</div><div className="text-xs text-gray-600">Min µs</div></div>
-                <div><div className="text-red-400 font-mono text-lg">{Math.max(...liveTrades.map(t => t.latency_us)).toLocaleString()}</div><div className="text-xs text-gray-600">Max µs</div></div>
-                <div><div className="text-white font-mono text-lg">{liveTrades.length}</div><div className="text-xs text-gray-600">Trades</div></div>
-              </div>
-            </div>
-          )}
+        {/* Trade panel column — appears first on mobile, on the right on desktop */}
+        <div className="order-1 lg:order-2 space-y-4">
+          {tradePanel}
+          {performanceCard}
         </div>
       </div>
     </div>

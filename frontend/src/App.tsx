@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
   setToken, clearToken, getMe,
   getTickers, getBalance, getHoldings, placeOrder, getTrades,
@@ -9,6 +9,7 @@ import {
 
 import { Sidebar } from './components/Sidebar'
 import { PublicLayout } from './components/PublicLayout'
+import { WelcomeModal } from './components/WelcomeModal'
 import { AuthScreen } from './auth/AuthScreen'
 import { HeroView } from './views/HeroView'
 import { AboutView } from './views/AboutView'
@@ -19,16 +20,44 @@ import { PortfolioView } from './views/PortfolioView'
 
 import type { Ticker, Holding, TradeLog, Position, User } from './types'
 
+const WELCOME_KEY = 'tradego.seenWelcome'
+
 interface AppShellProps {
   children: ReactNode
   user: User | null
   balance: number
 }
+
 function AppShell({ children, user, balance }: AppShellProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const location = useLocation()
+  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex">
-      <Sidebar user={user} balance={balance} />
-      <main className="flex-1 min-w-0">{children}</main>
+      <Sidebar user={user} balance={balance} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="lg:hidden sticky top-0 z-30 bg-[#0a0a0f]/95 backdrop-blur border-b border-[#1a1a25] flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setSidebarOpen(true)} aria-label="Open menu"
+            className="text-gray-400 hover:text-white transition">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <span className="font-bold tracking-tight">
+            Trade<span className="text-emerald-400">Go</span>
+          </span>
+          {user && (
+            <span className="ml-auto flex items-center gap-2 text-sm">
+              <span className="text-lg">{user.avatar}</span>
+              <span className="text-xs text-gray-500 font-mono">${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </span>
+          )}
+        </header>
+        <main className="flex-1 min-w-0">{children}</main>
+      </div>
     </div>
   )
 }
@@ -52,6 +81,8 @@ function App() {
   const [levLeverage, setLevLeverage] = useState(10)
   const [levMargin, setLevMargin] = useState('100')
   const [tab, setTab] = useState<'trades' | 'holdings' | 'positions'>('trades')
+
+  const [showWelcome, setShowWelcome] = useState(false)
 
   const navigate = useNavigate()
 
@@ -96,11 +127,23 @@ function App() {
 
   function handleLogin(t: string) {
     localStorage.setItem('token', t); setToken(t); setTokenState(t)
+    if (!localStorage.getItem(WELCOME_KEY)) {
+      setShowWelcome(true)
+    }
     navigate('/trade')
   }
   function handleLogout() {
     localStorage.removeItem('token'); clearToken(); setTokenState(''); setUser(null)
     navigate('/')
+  }
+
+  function dismissWelcome() {
+    localStorage.setItem(WELCOME_KEY, '1')
+    setShowWelcome(false)
+  }
+
+  function showTutorialAgain() {
+    setShowWelcome(true)
   }
 
   async function handleSpotTrade(side: 'BUY' | 'SELL') {
@@ -154,69 +197,83 @@ function App() {
   const isAuthed = !!token
 
   return (
-    <Routes>
-      {/* Public routes */}
-      <Route element={<PublicLayout isAuthed={isAuthed} />}>
-        <Route path="/" element={<HeroView />} />
-        <Route path="/about" element={<AboutView />} />
-      </Route>
+    <>
+      <WelcomeModal open={showWelcome} onClose={dismissWelcome} />
 
-      <Route path="/login" element={
-        isAuthed ? <Navigate to="/trade" replace /> : <AuthScreen onComplete={handleLogin} />
-      } />
+      <Routes>
+        {/* Public layout — Hero (root) only.
+            About is handled separately below so it can use either layout. */}
+        <Route element={<PublicLayout isAuthed={isAuthed} onLogout={handleLogout} />}>
+          <Route path="/" element={<HeroView />} />
+          {!isAuthed && <Route path="/about" element={<AboutView />} />}
+        </Route>
 
-      <Route path="/trade" element={
-        isAuthed ? (
-          <AppShell user={user} balance={balance}>
-            <TradeView
-              tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
-              interval={interval} setInterval={setInterval}
-              tradeMode={tradeMode} setTradeMode={setTradeMode}
-              tradeQty={tradeQty} setTradeQty={setTradeQty}
-              levDirection={levDirection} setLevDirection={setLevDirection}
-              levLeverage={levLeverage} setLevLeverage={setLevLeverage}
-              levMargin={levMargin} setLevMargin={setLevMargin}
-              holdings={holdings} trades={trades} openPositions={openPositions}
-              tab={tab} setTab={setTab} loading={loading}
-              handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
-              handleClosePosition={handleClosePosition}
-              favourites={favourites} toggleFavourite={toggleFavourite}
-            />
-          </AppShell>
-        ) : <Navigate to="/login" replace />
-      } />
+        {/* About — when logged in, render inside the app shell with sidebar */}
+        {isAuthed && (
+          <Route path="/about" element={
+            <AppShell user={user} balance={balance}>
+              <AboutView />
+            </AppShell>
+          } />
+        )}
 
-      <Route path="/portfolio" element={
-        isAuthed ? (
-          <AppShell user={user} balance={balance}>
-            <PortfolioView
-              tickers={tickers} balance={balance} holdings={holdings}
-              trades={trades} openPositions={openPositions}
-              setSelectedSymbol={setSelectedSymbol}
-            />
-          </AppShell>
-        ) : <Navigate to="/login" replace />
-      } />
+        <Route path="/login" element={
+          isAuthed ? <Navigate to="/trade" replace /> : <AuthScreen onComplete={handleLogin} />
+        } />
 
-      <Route path="/markets" element={
-        isAuthed ? (
-          <AppShell user={user} balance={balance}>
-            <MarketsView tickers={tickers} favourites={favourites}
-              toggleFavourite={toggleFavourite} setSelectedSymbol={setSelectedSymbol} />
-          </AppShell>
-        ) : <Navigate to="/login" replace />
-      } />
+        <Route path="/trade" element={
+          isAuthed ? (
+            <AppShell user={user} balance={balance}>
+              <TradeView
+                tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
+                interval={interval} setInterval={setInterval}
+                tradeMode={tradeMode} setTradeMode={setTradeMode}
+                tradeQty={tradeQty} setTradeQty={setTradeQty}
+                levDirection={levDirection} setLevDirection={setLevDirection}
+                levLeverage={levLeverage} setLevLeverage={setLevLeverage}
+                levMargin={levMargin} setLevMargin={setLevMargin}
+                holdings={holdings} trades={trades} openPositions={openPositions}
+                tab={tab} setTab={setTab} loading={loading}
+                handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
+                handleClosePosition={handleClosePosition}
+                favourites={favourites} toggleFavourite={toggleFavourite}
+              />
+            </AppShell>
+          ) : <Navigate to="/login" replace />
+        } />
 
-      <Route path="/settings" element={
-        isAuthed ? (
-          <AppShell user={user} balance={balance}>
-            <SettingsView user={user} onUpdate={fetchData} onLogout={handleLogout} />
-          </AppShell>
-        ) : <Navigate to="/login" replace />
-      } />
+        <Route path="/portfolio" element={
+          isAuthed ? (
+            <AppShell user={user} balance={balance}>
+              <PortfolioView
+                tickers={tickers} balance={balance} holdings={holdings}
+                trades={trades} openPositions={openPositions}
+                setSelectedSymbol={setSelectedSymbol}
+              />
+            </AppShell>
+          ) : <Navigate to="/login" replace />
+        } />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="/markets" element={
+          isAuthed ? (
+            <AppShell user={user} balance={balance}>
+              <MarketsView tickers={tickers} favourites={favourites}
+                toggleFavourite={toggleFavourite} setSelectedSymbol={setSelectedSymbol} />
+            </AppShell>
+          ) : <Navigate to="/login" replace />
+        } />
+
+        <Route path="/settings" element={
+          isAuthed ? (
+            <AppShell user={user} balance={balance}>
+              <SettingsView user={user} onUpdate={fetchData} onLogout={handleLogout} onShowTutorial={showTutorialAgain} />
+            </AppShell>
+          ) : <Navigate to="/login" replace />
+        } />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   )
 }
 

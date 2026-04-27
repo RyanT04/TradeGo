@@ -7,9 +7,10 @@ interface SettingsViewProps {
   user: User | null
   onUpdate: () => void
   onLogout: () => void
+  onShowTutorial: () => void
 }
 
-export function SettingsView({ user, onUpdate, onLogout }: SettingsViewProps) {
+export function SettingsView({ user, onUpdate, onLogout, onShowTutorial }: SettingsViewProps) {
   const [username, setUsername] = useState(user?.username || '')
   const [avatar, setAvatar] = useState(user?.avatar || '🚀')
   const [profileMsg, setProfileMsg] = useState('')
@@ -20,7 +21,6 @@ export function SettingsView({ user, onUpdate, onLogout }: SettingsViewProps) {
   const [pwdMsg, setPwdMsg] = useState('')
   const [pwdError, setPwdError] = useState('')
 
-  // Reset portfolio
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [resetBalance, setResetBalance] = useState('10000')
   const [resetClearHistory, setResetClearHistory] = useState(false)
@@ -74,20 +74,16 @@ export function SettingsView({ user, onUpdate, onLogout }: SettingsViewProps) {
       setTimeout(() => setResetMsg(''), 5000)
     } catch (err: any) {
       const msg = err.response?.data?.error
-      if (msg) {
-        setResetError(`Reset failed: ${msg}`)
-      } else if (err.message) {
-        setResetError(`Reset failed: ${err.message}`)
-      } else {
-        setResetError('Reset failed: unable to reach the server. Please try again.')
-      }
+      if (msg) setResetError(`Reset failed: ${msg}`)
+      else if (err.message) setResetError(`Reset failed: ${err.message}`)
+      else setResetError('Reset failed: unable to reach the server. Please try again.')
     }
     setResetting(false)
   }
 
   return (
-    <div className="p-6 max-w-xl">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+    <div className="p-4 lg:p-6 max-w-xl">
+      <h1 className="text-2xl font-bold mb-4 lg:mb-6">Settings</h1>
 
       {/* Profile */}
       <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-5 mb-4">
@@ -130,6 +126,18 @@ export function SettingsView({ user, onUpdate, onLogout }: SettingsViewProps) {
           {pwdMsg && <p className="text-sm text-emerald-400">{pwdMsg}</p>}
           <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">Change password</button>
         </form>
+      </div>
+
+      {/* Tutorial */}
+      <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-5 mb-4">
+        <h2 className="text-base font-medium mb-2">Tutorial</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Need a refresher? Open the welcome guide again.
+        </p>
+        <button onClick={onShowTutorial}
+          className="px-4 py-2 bg-[#0a0a0f] hover:bg-[#1a1a25] border border-gray-800 hover:border-gray-700 rounded-lg text-sm font-medium text-gray-300 transition">
+          Show tutorial
+        </button>
       </div>
 
       {/* Reset portfolio */}
