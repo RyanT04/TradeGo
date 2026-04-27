@@ -13,6 +13,11 @@ import * as path from 'path';
 
 const DOMAIN_NAME = 'trade-go.tech';
 const WWW_DOMAIN = 'www.trade-go.tech';
+const SUBDOMAIN_NAME = 'tradego.ryantang.dev';
+
+// New cert for tradego.ryantang.dev (imported by ARN — already issued in ACM)
+const RYANTANG_DEV_CERT_ARN =
+  'arn:aws:acm:eu-west-2:276719381676:certificate/eacdfb6b-454d-4b41-8f82-eaefb159b9d4';
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -60,18 +65,25 @@ export class InfrastructureStack extends cdk.Stack {
       },
     });
 
-    // ── ACM certificate (DNS-validated) ──
-    // We don't have a Route 53 hosted zone (.tech registered elsewhere),
-    // so we use validation: CertificateValidation.fromDns() WITHOUT a hostedZone.
-    // CDK will pause on first deploy and CloudFormation will sit in CREATE_IN_PROGRESS
-    // while waiting for DNS validation records to be added at .tech.
-    // The records to add show up in the AWS console (Certificate Manager) — copy them
-    // to the .tech DNS panel as CNAME records, and CloudFormation will resume.
+    // ── ACM certificate for trade-go.tech (CDK-managed, original) ──
+    // KEEP THIS DEFINITION INTACT — removing it would trigger CloudFormation
+    // to try to delete the cert, which fails while it's still attached to
+    // the listener.
     const certificate = new acm.Certificate(this, 'TradeGoCert', {
       domainName: DOMAIN_NAME,
       subjectAlternativeNames: [WWW_DOMAIN],
       validation: acm.CertificateValidation.fromDns(),
     });
+
+    // ── ACM certificate for tradego.ryantang.dev (imported, fallback) ──
+    // This is the aged-domain fallback used when the uni firewall blocks
+    // the newly registered .tech domain. Already issued in ACM, so we just
+    // import it by ARN.
+    const ryantangCertificate = acm.Certificate.fromCertificateArn(
+      this,
+      'RyantangDevCert',
+      RYANTANG_DEV_CERT_ARN,
+    );
 
     // ── Build the Go Docker image ──
     const dockerImage = new ecrAssets.DockerImageAsset(this, 'TradeGoImage', {
@@ -91,12 +103,9 @@ export class InfrastructureStack extends cdk.Stack {
         publicLoadBalancer: true,
         enableExecuteCommand: true,
 
-        // HTTPS configuration
         protocol: elbv2.ApplicationProtocol.HTTPS,
         listenerPort: 443,
         certificate,
-
-        // Auto-create an HTTP listener on 80 that redirects to HTTPS on 443
         redirectHTTP: true,
 
         taskImageOptions: {
@@ -121,10 +130,16 @@ export class InfrastructureStack extends cdk.Stack {
       }
     );
 
+    // Attach the second certificate to the HTTPS listener.
+    // ALB supports multiple certs per listener and selects one based on SNI.
+    fargateService.listener.addCertificates('RyantangDevCertAttachment', [
+      ryantangCertificate,
+    ]);
+
     // Allow Fargate -> RDS
     database.connections.allowFrom(fargateService.service, ec2.Port.tcp(5432));
 
-    // Health check (target the API path now)
+    // Health check
     fargateService.targetGroup.configureHealthCheck({
       path: '/api/health',
       healthyHttpCodes: '200',
@@ -134,12 +149,17 @@ export class InfrastructureStack extends cdk.Stack {
     // ── Outputs ──
     new cdk.CfnOutput(this, 'AppURL', {
       value: `https://${DOMAIN_NAME}`,
-      description: 'Once DNS is pointed at the ALB, the app is reachable here',
+      description: 'Primary URL — works on most networks',
+    });
+
+    new cdk.CfnOutput(this, 'FallbackURL', {
+      value: `https://${SUBDOMAIN_NAME}`,
+      description: 'Fallback URL on aged domain — works behind strict firewalls',
     });
 
     new cdk.CfnOutput(this, 'LoadBalancerDNS', {
       value: fargateService.loadBalancer.loadBalancerDnsName,
-      description: 'Create a CNAME record at .tech: trade-go.tech → THIS VALUE',
+      description: 'Both domains CNAME to this',
     });
 
     new cdk.CfnOutput(this, 'DatabaseEndpoint', {
