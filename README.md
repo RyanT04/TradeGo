@@ -2,7 +2,7 @@
 
 A high-performance cryptocurrency trading simulator built with **Go** and **AWS**, designed to let users practise trading with real-time market data and zero financial risk.
 
-**Live:** [trade-go.tech](https://trade-go.tech) · **Fallback:** [tradego.ryantang.dev](https://tradego.ryantang.dev)
+**Live:** [trade-go.tech](https://trade-go.tech) ·
 
 ---
 
