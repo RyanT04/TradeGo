@@ -17,6 +17,7 @@ import { TradeView } from './views/TradeView'
 import { MarketsView } from './views/MarketsView'
 import { SettingsView } from './views/SettingsView'
 import { PortfolioView } from './views/PortfolioView'
+import { ChatBubble } from './components/ChatBubble'
 
 import type { Ticker, Holding, TradeLog, Position, User } from './types'
 
@@ -58,6 +59,7 @@ function AppShell({ children, user, balance }: AppShellProps) {
         </header>
         <main className="flex-1 min-w-0">{children}</main>
       </div>
+      <ChatBubble />
     </div>
   )
 }
@@ -125,21 +127,28 @@ function App() {
     } catch {}
   }
 
-  function handleLogin(t: string) {
-    localStorage.setItem('token', t); setToken(t); setTokenState(t)
-    if (!localStorage.getItem(WELCOME_KEY)) {
-      setShowWelcome(true)
-    }
-    navigate('/trade')
+  function handleLogin(t: string, isNewUser: boolean = false) {
+      localStorage.setItem('token', t); setToken(t); setTokenState(t)
+      if (isNewUser) {
+        localStorage.removeItem(WELCOME_KEY)
+      }
+      if (!localStorage.getItem(WELCOME_KEY)) {
+        setShowWelcome(true)
+      }
+      navigate(isNewUser ? '/about' : '/trade')
   }
+
   function handleLogout() {
-    localStorage.removeItem('token'); clearToken(); setTokenState(''); setUser(null)
+    localStorage.removeItem('token')
+    clearToken(); setTokenState(''); setUser(null)
     navigate('/')
   }
 
-  function dismissWelcome() {
-    localStorage.setItem(WELCOME_KEY, '1')
-    setShowWelcome(false)
+  function dismissWelcome(permanent: boolean) {
+    if (permanent) {
+        localStorage.setItem(WELCOME_KEY, '1')
+      }
+      setShowWelcome(false)
   }
 
   function showTutorialAgain() {
@@ -201,14 +210,11 @@ function App() {
       <WelcomeModal open={showWelcome} onClose={dismissWelcome} />
 
       <Routes>
-        {/* Public layout — Hero (root) only.
-            About is handled separately below so it can use either layout. */}
         <Route element={<PublicLayout isAuthed={isAuthed} onLogout={handleLogout} />}>
           <Route path="/" element={<HeroView />} />
           {!isAuthed && <Route path="/about" element={<AboutView />} />}
         </Route>
 
-        {/* About — when logged in, render inside the app shell with sidebar */}
         {isAuthed && (
           <Route path="/about" element={
             <AppShell user={user} balance={balance}>
@@ -218,7 +224,11 @@ function App() {
         )}
 
         <Route path="/login" element={
-          isAuthed ? <Navigate to="/trade" replace /> : <AuthScreen onComplete={handleLogin} />
+          isAuthed ? <Navigate to="/trade" replace /> : <AuthScreen onComplete={handleLogin} initialMode="login" />
+        } />
+
+        <Route path="/register" element={
+          isAuthed ? <Navigate to="/about" replace /> : <AuthScreen onComplete={handleLogin} initialMode="register" />
         } />
 
         <Route path="/trade" element={
@@ -237,6 +247,7 @@ function App() {
                 handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
                 handleClosePosition={handleClosePosition}
                 favourites={favourites} toggleFavourite={toggleFavourite}
+                balance={balance}
               />
             </AppShell>
           ) : <Navigate to="/login" replace />

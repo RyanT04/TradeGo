@@ -1,13 +1,15 @@
+import { useState } from 'react'
+
 interface WelcomeModalProps {
   open: boolean
-  onClose: () => void
+  onClose: (permanent: boolean) => void
 }
 
 const tips = [
   {
     icon: '📊',
     title: 'Trade live coins, risk-free',
-    body: 'Pick from 460+ coins. Buy and sell against real Bybit prices using virtual money. Your portfolio updates instantly.',
+    body: 'Pick from 460+ coins. Buy and sell against real Bybit prices using virtual money. Your portfolio updates instantly. Note: unlike real exchanges, there are no trading fees or slippage, so results may differ slightly from live trading.',
   },
   {
     icon: '⚡',
@@ -24,9 +26,17 @@ const tips = [
     title: 'Watch the latency',
     body: 'Every trade reports its execution time in microseconds. The Performance card on the trade page tracks min/max/avg across your session.',
   },
+  {
+  icon: '🤖',
+  title: 'Ask the AI assistant',
+  body: 'Tap the green chat bubble in the bottom-right corner to ask questions about trading concepts, crypto strategies, or how to use TradeGo. It\'s always there to help.',
+  },
 ]
 
+
 export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
+  const [dontShowAgain, setDontShowAgain] = useState(false)
+
   if (!open) return null
 
   return (
@@ -53,7 +63,12 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             ))}
           </div>
 
-          <button onClick={onClose}
+          <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer mb-4">
+            <input type="checkbox" checked={dontShowAgain} onChange={e => setDontShowAgain(e.target.checked)}
+              className="accent-emerald-600" />
+            Don't show this again
+          </label>
+          <button onClick={() => onClose(dontShowAgain)}
             className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
             Got it, let's trade
           </button>

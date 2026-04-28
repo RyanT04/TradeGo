@@ -32,6 +32,7 @@ interface TradeViewProps {
   handleClosePosition: (id: string) => void
   favourites: string[]
   toggleFavourite: (symbol: string) => void
+  balance:number
 }
 
 export function TradeView(props: TradeViewProps) {
@@ -41,12 +42,24 @@ export function TradeView(props: TradeViewProps) {
     levDirection, setLevDirection, levLeverage, setLevLeverage, levMargin, setLevMargin,
     holdings, trades, openPositions, tab, setTab, loading,
     handleSpotTrade, handleLeveragedOpen, handleClosePosition,
-    favourites, toggleFavourite,
+    favourites, toggleFavourite, balance
   } = props
 
   const ticker = tickers[selectedSymbol]
   const pct = ticker ? parseFloat(ticker.price24hPcnt) * 100 : 0
   const isUp = pct >= 0
+
+  const [spotInputMode, setSpotInputMode] = useState<'coin' | 'usd'>('coin')
+
+  const coinName = selectedSymbol.replace('USDT', '')
+  const tradeQtyNum = parseFloat(tradeQty) || 0
+  const lastPrice = ticker ? parseFloat(ticker.lastPrice) : 0
+  const effectiveCoinQty = spotInputMode === 'usd' && lastPrice > 0
+    ? tradeQtyNum / lastPrice
+    : tradeQtyNum
+  const effectiveUsdTotal = spotInputMode === 'usd'
+    ? tradeQtyNum
+    : tradeQtyNum * lastPrice
 
   const liveTrades = trades.filter(t => t.latency_us > 0)
   const avgLatency = liveTrades.length > 0
@@ -83,6 +96,17 @@ export function TradeView(props: TradeViewProps) {
     !coinSearch || t.symbol.toLowerCase().includes(coinSearch.toLowerCase())
   )
 
+  function onSpotTrade(side: 'BUY' | 'SELL') {
+    if (spotInputMode === 'usd') {
+      if (lastPrice <= 0 || tradeQtyNum <= 0) { alert('Invalid amount'); return }
+      const coinQty = tradeQtyNum / lastPrice
+      setTradeQty(coinQty.toString())
+      setTimeout(() => handleSpotTrade(side), 0)
+    } else {
+      handleSpotTrade(side)
+    }
+  }
+
   const tradePanel = (
     <div className="bg-[#12121a] border border-[#1a1a25] rounded-lg p-4">
       <div className="flex gap-1 mb-4 bg-[#0a0a0f] p-1 rounded-lg">
@@ -101,23 +125,41 @@ export function TradeView(props: TradeViewProps) {
       {tradeMode === 'spot' ? (
         <>
           <div className="mb-3">
-            <label className="text-xs text-gray-500 block mb-1">Quantity</label>
-            <input type="number" step="any" value={tradeQty} onChange={e => setTradeQty(e.target.value)}
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-500">
+                {spotInputMode === 'coin' ? `Quantity (${coinName})` : 'Amount (USD)'}
+              </label>
+              <div className="flex gap-1 bg-[#0a0a0f] rounded p-0.5">
+                <button onClick={() => { setSpotInputMode('coin'); setTradeQty('0.01') }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${spotInputMode === 'coin' ? 'bg-[#1a1a25] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                  {coinName}
+                </button>
+                <button onClick={() => { setSpotInputMode('usd'); setTradeQty('100') }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${spotInputMode === 'usd' ? 'bg-[#1a1a25] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                  USD
+                </button>
+              </div>
+            </div>
+            <input type="number" step="any" min="0" value={tradeQty} onChange={e => setTradeQty(e.target.value)}
               className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-800 transition" />
           </div>
-          {ticker && (
-            <div className="text-xs text-gray-600 mb-4">
-              Total: <span className="text-gray-400">${(parseFloat(tradeQty || '0') * parseFloat(ticker.lastPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          {ticker && tradeQtyNum > 0 && (
+            <div className="text-xs text-gray-600 mb-4 space-y-0.5">
+              {spotInputMode === 'usd' ? (
+                <div>≈ <span className="text-gray-400 font-mono">{effectiveCoinQty.toFixed(8)} {coinName}</span></div>
+              ) : (
+                <div>≈ <span className="text-gray-400 font-mono">${effectiveUsdTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+              )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-2 mb-4">
-            <button onClick={() => handleSpotTrade('BUY')} disabled={loading}
+            <button onClick={() => onSpotTrade('BUY')} disabled={loading}
               className="py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Buy</button>
-            <button onClick={() => handleSpotTrade('SELL')} disabled={loading}
+            <button onClick={() => onSpotTrade('SELL')} disabled={loading}
               className="py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm font-medium transition">Sell</button>
           </div>
           <div className="flex gap-1">
-            {['0.001', '0.01', '0.1', '1'].map(q => (
+            {(spotInputMode === 'coin' ? ['0.001', '0.01', '0.1', '1'] : ['10', '100', '1000', '10000']).map(q => (
               <button key={q} onClick={() => setTradeQty(q)}
                 className={`flex-1 py-1.5 rounded text-xs transition ${tradeQty === q ? 'bg-[#1a1a25] text-white' : 'text-gray-600 hover:text-gray-300 border border-[#1a1a25]'}`}>{q}</button>
             ))}
@@ -141,7 +183,10 @@ export function TradeView(props: TradeViewProps) {
             </div>
           </div>
           <div className="mb-3">
-            <label className="text-xs text-gray-500 block mb-1">Margin (USD)</label>
+            <div className="flex items-center justify-between mb-1">
+            <label className="text-xs text-gray-500">Margin (USD)</label>
+            <span className="text-xs text-gray-600 font-mono">Bal: ${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
             <input type="number" step="any" value={levMargin} onChange={e => setLevMargin(e.target.value)}
               className="w-full px-3 py-2 bg-[#0a0a0f] border border-[#1a1a25] rounded-lg text-sm font-mono focus:outline-none focus:border-amber-800 transition" />
           </div>

@@ -53,12 +53,10 @@ export function PublicLayout({ isAuthed, onLogout }: PublicLayoutProps) {
             Trade<span className="text-emerald-400">Go</span>
           </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden sm:flex items-center gap-6 text-sm">
             {navLinks}
           </nav>
 
-          {/* Right side: CTA + sign out + mobile hamburger */}
           <div className="ml-auto flex items-center gap-2">
             {isAuthed ? (
               <>
@@ -72,13 +70,18 @@ export function PublicLayout({ isAuthed, onLogout }: PublicLayoutProps) {
                 </button>
               </>
             ) : (
-              <Link to="/login"
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
-                Sign in
-              </Link>
+              <>
+                <Link to="/login"
+                  className="px-3 sm:px-4 py-2 border border-[#1a1a25] hover:border-gray-600 rounded-lg text-sm font-medium text-gray-300 hover:text-white transition">
+                  Sign in
+                </Link>
+                <Link to="/register"
+                  className="px-3 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+                  Register
+                </Link>
+              </>
             )}
 
-            {/* Hamburger — only visible on small screens */}
             <button onClick={() => setMobileMenuOpen(o => !o)}
               className="sm:hidden text-gray-400 hover:text-white transition p-1"
               aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}>
@@ -98,7 +101,6 @@ export function PublicLayout({ isAuthed, onLogout }: PublicLayoutProps) {
           </div>
         </div>
 
-        {/* Mobile dropdown nav — appears below the topbar when open */}
         {mobileMenuOpen && (
           <nav className="sm:hidden border-t border-[#1a1a25] bg-[#0a0a0f]">
             <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 text-sm">

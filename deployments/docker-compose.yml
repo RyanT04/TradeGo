@@ -28,6 +28,7 @@ services:
       PORT: 8080
       DATABASE_URL: postgres://tradego:tradego123@postgres:5432/tradego?sslmode=disable
       JWT_SECRET: tradego-dev-secret
+      GEMINI_API_KEY: AIzaSyBOsBKCXjx9TSUHnbtBcWRQmQKYHFHnSn4
     depends_on:
       postgres:
         condition: service_healthy

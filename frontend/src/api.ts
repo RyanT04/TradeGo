@@ -105,3 +105,8 @@ export async function resetPortfolio(balance: number, clearHistory: boolean) {
   })
   return data
 }
+
+export async function sendChat(messages: { role: string; text: string }[]) {
+  const res = await api.post('/chat', { messages })
+  return res.data
+}

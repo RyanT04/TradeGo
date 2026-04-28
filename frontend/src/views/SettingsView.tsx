@@ -3,6 +3,9 @@ import { updateProfile, changePassword, resetPortfolio } from '../api'
 import { AVATARS } from '../constants'
 import type { User } from '../types'
 
+const RESET_MIN = 1
+const RESET_MAX = 100_000_000
+
 interface SettingsViewProps {
   user: User | null
   onUpdate: () => void
@@ -64,7 +67,9 @@ export function SettingsView({ user, onUpdate, onLogout, onShowTutorial }: Setti
   async function handleReset() {
     setResetError(''); setResetMsg('')
     const bal = parseFloat(resetBalance)
-    if (!bal || bal <= 0) { setResetError('Balance must be greater than 0'); return }
+    if (isNaN(bal)) { setResetError('Please enter a valid number'); return }
+    if (bal < RESET_MIN) { setResetError(`Balance must be at least $${RESET_MIN.toLocaleString()}`); return }
+    if (bal > RESET_MAX) { setResetError(`Balance cannot exceed $${RESET_MAX.toLocaleString()}`); return }
     setResetting(true)
     try {
       await resetPortfolio(bal, resetClearHistory)
@@ -145,7 +150,7 @@ export function SettingsView({ user, onUpdate, onLogout, onShowTutorial }: Setti
         <h2 className="text-base font-medium mb-2">Reset portfolio</h2>
         <p className="text-xs text-gray-500 mb-4">
           Start over with a fresh balance. This closes all open positions, deletes all holdings,
-          and sets your balance to whatever you choose.
+          and sets your balance to whatever you choose. Range: $1 to $100,000,000. Limited to 3 resets per day.
         </p>
 
         {!showResetConfirm ? (
@@ -159,11 +164,11 @@ export function SettingsView({ user, onUpdate, onLogout, onShowTutorial }: Setti
 
             <div>
               <label className="text-xs text-gray-400 block mb-1">New starting balance (USD)</label>
-              <input type="number" step="any" min="1" value={resetBalance}
+              <input type="number" step="any" min={RESET_MIN} max={RESET_MAX} value={resetBalance}
                 onChange={e => setResetBalance(e.target.value)}
                 className="w-full px-3 py-2 bg-[#12121a] border border-gray-800 rounded text-sm font-mono focus:outline-none focus:border-emerald-600 transition" />
               <div className="flex gap-1 mt-2">
-                {['1000', '10000', '100000'].map(v => (
+                {['1000', '10000', '100000', '1000000'].map(v => (
                   <button key={v} onClick={() => setResetBalance(v)}
                     className="flex-1 py-1.5 bg-[#12121a] border border-gray-800 hover:border-gray-700 rounded text-xs text-gray-400 transition">
                     ${parseInt(v).toLocaleString()}

@@ -112,10 +112,11 @@ export class InfrastructureStack extends cdk.Stack {
           image: ecs.ContainerImage.fromDockerImageAsset(dockerImage),
           containerPort: 8080,
           environment: {
-            PORT: '8080',
-            DB_HOST: database.dbInstanceEndpointAddress,
-            DB_PORT: database.dbInstanceEndpointPort,
-            DB_NAME: 'tradego',
+              PORT: '8080',
+              DB_HOST: database.dbInstanceEndpointAddress,
+              DB_PORT: database.dbInstanceEndpointPort,
+              DB_NAME: 'tradego',
+              GEMINI_API_KEY: 'AIzaSyBOsBKCXjx9TSUHnbtBcWRQmQKYHFHnSn4',
           },
           secrets: {
             DB_USER: ecs.Secret.fromSecretsManager(database.secret!, 'username'),

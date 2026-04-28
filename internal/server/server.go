@@ -132,6 +132,9 @@ func (s *Server) routes(
 
 			// Portfolio
 			protected.POST("/portfolio/reset", ph.Reset)
+
+			//AI chat
+			protected.POST("/chat", handler.ChatHandler)
 		}
 	}
 

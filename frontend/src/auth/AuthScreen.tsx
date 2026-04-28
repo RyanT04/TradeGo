@@ -2,13 +2,18 @@ import { useState } from 'react'
 import { setToken, login, register, updateProfile, setStartingBalance } from '../api'
 import { AVATARS } from '../constants'
 
-export function AuthScreen({ onComplete }: { onComplete: (token: string) => void }) {
+interface AuthScreenProps {
+  onComplete: (token: string, isNewUser: boolean) => void
+  initialMode?: 'login' | 'register'
+}
+
+export function AuthScreen({ onComplete, initialMode = 'register' }: AuthScreenProps) {
   const [step, setStep] = useState<'auth' | 'profile' | 'balance'>('auth')
   const [token, setLocalToken] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [isRegister, setIsRegister] = useState(true)
+  const [isRegister, setIsRegister] = useState(initialMode === 'register')
   const [error, setError] = useState('')
   const [username, setUsername] = useState('')
   const [avatar, setAvatar] = useState('🚀')
@@ -25,7 +30,7 @@ export function AuthScreen({ onComplete }: { onComplete: (token: string) => void
     try {
       const data = isRegister ? await register(email, password) : await login(email, password)
       localStorage.setItem('token', data.token); setToken(data.token); setLocalToken(data.token)
-      if (data.user.onboarded) onComplete(data.token); else setStep('profile')
+      if (data.user.onboarded) onComplete(data.token, false); else setStep('profile')
     } catch (err: any) {
       const e = err.response?.data?.error
       setError(e ? e.charAt(0).toUpperCase() + e.slice(1) : 'Authentication failed')
@@ -38,7 +43,7 @@ export function AuthScreen({ onComplete }: { onComplete: (token: string) => void
   }
   async function handleBalance() {
     if (!selectedBalance) return; setError('')
-    try { await setStartingBalance(selectedBalance); onComplete(token) }
+    try { await setStartingBalance(selectedBalance); onComplete(token, true) }
     catch (err: any) { setError(err.response?.data?.error || 'Failed to set balance') }
   }
 
@@ -47,7 +52,9 @@ export function AuthScreen({ onComplete }: { onComplete: (token: string) => void
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold tracking-tight">Trade<span className="text-emerald-400">Go</span></h1>
-          <p className="text-gray-500 text-sm mt-2">High-performance crypto trading simulator</p>
+          <p className="text-gray-500 text-sm mt-2">
+            {isRegister ? 'Create your account' : 'Welcome back'}
+          </p>
         </div>
         <form onSubmit={handleAuth} className="space-y-3">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}

@@ -83,3 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_symbol_status ON orders(symbol, status);
 CREATE INDEX IF NOT EXISTS idx_leveraged_user_open ON leveraged_positions(user_id, is_open);
+
+-- Reset rate limiting (added after initial schema)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_count INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_count_date DATE DEFAULT CURRENT_DATE;
