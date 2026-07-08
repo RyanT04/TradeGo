@@ -4,10 +4,8 @@ services:
     container_name: tradego-db
     environment:
       POSTGRES_USER: tradego
-      POSTGRES_PASSWORD: tradego123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: tradego
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
@@ -26,12 +24,15 @@ services:
       - "8080:8080"
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://tradego:tradego123@postgres:5432/tradego?sslmode=disable
-      JWT_SECRET: tradego-dev-secret
-      GEMINI_API_KEY: AIzaSyBOsBKCXjx9TSUHnbtBcWRQmQKYHFHnSn4
+      DATABASE_URL: postgres://tradego:${POSTGRES_PASSWORD}@postgres:5432/tradego?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      BASE_URL: ${BASE_URL}
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ../.env
 
 volumes:
   pgdata:
