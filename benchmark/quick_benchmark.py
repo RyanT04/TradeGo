@@ -22,14 +22,12 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 # ── Configuration ──
-# Use whichever domain works for you
 TRADEGO_BASE = "https://trade-go.tech"
 # TRADEGO_BASE = "https://tradego.ryantang.dev"  # fallback if on uni wifi
 
 RESULTS_DIR = Path("results")
 RESULTS_DIR.mkdir(exist_ok=True)
 
-# Dark theme for charts (matches TradeGo's aesthetic)
 plt.rcParams.update({
     "figure.facecolor": "#0a0a0f",
     "axes.facecolor": "#12121a",
@@ -48,7 +46,6 @@ plt.rcParams.update({
 
 
 async def timed_get(session, url):
-    """Returns latency in ms."""
     start = time.perf_counter()
     try:
         async with session.get(url, timeout=30) as resp:
@@ -59,10 +56,19 @@ async def timed_get(session, url):
 
 
 async def timed_post(session, url, body, headers=None):
-    """Returns (latency_ms, status, response_json)."""
     start = time.perf_counter()
     try:
         async with session.post(url, json=body, headers=headers, timeout=30) as resp:
+            data = await resp.json()
+            return (time.perf_counter() - start) * 1000, resp.status, data
+    except Exception as e:
+        return (time.perf_counter() - start) * 1000, 0, None
+
+
+async def timed_patch(session, url, body, headers=None):
+    start = time.perf_counter()
+    try:
+        async with session.patch(url, json=body, headers=headers, timeout=30) as resp:
             data = await resp.json()
             return (time.perf_counter() - start) * 1000, resp.status, data
     except Exception as e:
@@ -101,29 +107,35 @@ async def run_benchmark():
         test_email = f"bench-{int(time.time())}@test.local"
         test_pass = "BenchPass123!"
 
+        trade_latencies_user = []
+        trade_latencies_server = []
+        token = None
+
+        # Register
         _, status, data = await timed_post(session, f"{TRADEGO_BASE}/api/auth/register", {
             "email": test_email, "password": test_pass,
         })
-        if status not in (200, 201) or not data or not data.get("token"):
-            print(f"  Register failed: {status} {data}")
-            # Try login instead
+        print(f"  Register: status={status}")
+
+        if status in (200, 201) and data and data.get("token"):
+            token = data["token"]
+        else:
+            # Try login
             _, status, data = await timed_post(session, f"{TRADEGO_BASE}/api/auth/login", {
                 "email": test_email, "password": test_pass,
             })
-            if status != 200:
-                print(f"  Login also failed. Skipping trade benchmark.")
-                data = None
+            print(f"  Login fallback: status={status}")
+            if status == 200 and data and data.get("token"):
+                token = data["token"]
 
-        trade_latencies_user = []  # user-observed (HTTP round-trip)
-        trade_latencies_server = []  # server-internal (from response)
-
-        if data and data.get("token"):
-            token = data["token"]
+        if token:
             headers = {"Authorization": f"Bearer {token}"}
+            print(f"  Token acquired")
 
-            # Set starting balance
-            await timed_post(session, f"{TRADEGO_BASE}/api/auth/balance",
+            # Set starting balance (PATCH)
+            _, status_b, data_b = await timed_patch(session, f"{TRADEGO_BASE}/api/auth/balance",
                            {"balance": 100000}, headers)
+            print(f"  Balance set: status={status_b} resp={data_b}")
 
             print("\n[4/5] Trade write — 50x POST /api/order (alternating BUY/SELL)...")
             for i in range(50):
@@ -131,13 +143,17 @@ async def run_benchmark():
                 ms, status, resp = await timed_post(session, f"{TRADEGO_BASE}/api/order", {
                     "symbol": "BTCUSDT", "side": side, "quantity": 0.0001,
                 }, headers)
-                if status == 200:
+                if status in (200, 201):
                     trade_latencies_user.append(ms)
-                    if resp and "latency_us" in resp:
+                    if resp and isinstance(resp, dict) and "latency_us" in resp:
                         trade_latencies_server.append(resp["latency_us"])
+                else:
+                    if i < 3:  # only print first few failures
+                        print(f"  Trade {i} failed: status={status} resp={resp}")
                 if (i + 1) % 10 == 0:
-                    print(f"  {i + 1}/50")
+                    print(f"  {i + 1}/50 (captured: {len(trade_latencies_user)} user, {len(trade_latencies_server)} server)")
         else:
+            print("  No token acquired. Skipping trade benchmark.")
             print("\n[4/5] Skipped (no auth token)")
 
         # ── Scenario 3: Concurrent reads ──
@@ -171,11 +187,10 @@ async def run_benchmark():
         stats("Trade server-internal (µs)", trade_latencies_server)
         stats("Concurrent 50x read (ms)", concurrent_latencies)
 
-        # ── Chart 1: Latency distribution (warm read vs concurrent) ──
+        # ── Chart 1: Latency distribution (warm read) ──
         if warm_latencies:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-            # Histogram
             ax1.hist(warm_latencies, bins=30, color="#10b981", alpha=0.8, edgecolor="#0a0a0f", linewidth=0.5)
             ax1.axvline(np.median(warm_latencies), color="#f59e0b", linestyle="--", linewidth=1.5, label=f"p50: {np.median(warm_latencies):.1f} ms")
             ax1.axvline(np.percentile(warm_latencies, 95), color="#ef4444", linestyle="--", linewidth=1.5, label=f"p95: {np.percentile(warm_latencies, 95):.1f} ms")
@@ -184,17 +199,15 @@ async def run_benchmark():
             ax1.set_title("GET /api/tickers — Latency Distribution (n=200)")
             ax1.legend(facecolor="#12121a", edgecolor="#1a1a25")
 
-            # CDF
             sorted_warm = np.sort(warm_latencies)
             cdf = np.arange(1, len(sorted_warm) + 1) / len(sorted_warm)
-            ax1b = ax2
-            ax1b.plot(sorted_warm, cdf, color="#10b981", linewidth=2)
-            ax1b.axhline(0.5, color="#f59e0b", linewidth=0.8, linestyle="--", alpha=0.5)
-            ax1b.axhline(0.95, color="#ef4444", linewidth=0.8, linestyle="--", alpha=0.5)
-            ax1b.set_xlabel("Latency (ms)")
-            ax1b.set_ylabel("Fraction of requests ≤ latency")
-            ax1b.set_title("GET /api/tickers — CDF")
-            ax1b.set_ylim(0, 1.02)
+            ax2.plot(sorted_warm, cdf, color="#10b981", linewidth=2)
+            ax2.axhline(0.5, color="#f59e0b", linewidth=0.8, linestyle="--", alpha=0.5)
+            ax2.axhline(0.95, color="#ef4444", linewidth=0.8, linestyle="--", alpha=0.5)
+            ax2.set_xlabel("Latency (ms)")
+            ax2.set_ylabel("Fraction of requests ≤ latency")
+            ax2.set_title("GET /api/tickers — CDF")
+            ax2.set_ylim(0, 1.02)
 
             fig.suptitle("TradeGo — Read Latency Profile", fontsize=14, color="white", y=1.02)
             fig.tight_layout()
@@ -207,7 +220,6 @@ async def run_benchmark():
         if trade_latencies_user and trade_latencies_server:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-            # User-observed (ms)
             ax1.hist(trade_latencies_user, bins=20, color="#6366f1", alpha=0.8, edgecolor="#0a0a0f", linewidth=0.5)
             ax1.axvline(np.median(trade_latencies_user), color="#f59e0b", linestyle="--", linewidth=1.5,
                        label=f"p50: {np.median(trade_latencies_user):.1f} ms")
@@ -218,7 +230,6 @@ async def run_benchmark():
             ax1.set_title("Trade Execution — User-Observed (ms)")
             ax1.legend(facecolor="#12121a", edgecolor="#1a1a25")
 
-            # Server-internal (µs)
             ax2.hist(trade_latencies_server, bins=20, color="#10b981", alpha=0.8, edgecolor="#0a0a0f", linewidth=0.5)
             ax2.axvline(np.median(trade_latencies_server), color="#f59e0b", linestyle="--", linewidth=1.5,
                        label=f"p50: {np.median(trade_latencies_server):.0f} µs")
@@ -235,6 +246,12 @@ async def run_benchmark():
             fig.savefig(path2)
             plt.close(fig)
             print(f"  Chart saved: {path2}")
+        else:
+            print("\n  Trade latency chart skipped (no trade data captured)")
+            if not trade_latencies_user:
+                print("    - No user-observed latencies")
+            if not trade_latencies_server:
+                print("    - No server-internal latencies")
 
         # ── Save raw data ──
         raw = {

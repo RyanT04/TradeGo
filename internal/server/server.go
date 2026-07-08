@@ -8,6 +8,7 @@ import (
 	"github.com/RyanT04/TradeGo/internal/auth"
 	"github.com/RyanT04/TradeGo/internal/config"
 	"github.com/RyanT04/TradeGo/internal/database"
+	"github.com/RyanT04/TradeGo/internal/email"
 	"github.com/RyanT04/TradeGo/internal/handler"
 	"github.com/RyanT04/TradeGo/internal/market"
 	"github.com/RyanT04/TradeGo/internal/matching"
@@ -71,7 +72,8 @@ func New(cfg *config.Config) *Server {
 
 	// Handlers
 	marketHandler := handler.NewMarketHandler(bybit)
-	authHandler := handler.NewAuthHandler(db, jwtService)
+	mailer := email.NewSender()
+	authHandler := handler.NewAuthHandler(db, jwtService, mailer)
 	orderHandler := handler.NewOrderHandler(db, engine)
 	favouritesHandler := handler.NewFavouritesHandler(db)
 	portfolioHandler := handler.NewPortfolioHandler(db)
@@ -101,6 +103,9 @@ func (s *Server) routes(
 		api.GET("/ticker", mh.GetTicker)
 		api.GET("/tickers", mh.GetAllTickers)
 		api.GET("/kline", handler.GetKline)
+		api.GET("/auth/verify", ah.VerifyEmail)
+		api.POST("/auth/forgot-password", ah.ForgotPassword)
+		api.POST("/auth/reset-password", ah.ResetPassword)
 
 		api.POST("/auth/register", ah.Register)
 		api.POST("/auth/login", ah.Login)
@@ -113,6 +118,7 @@ func (s *Server) routes(
 			protected.PATCH("/auth/profile", ah.UpdateProfile)
 			protected.PATCH("/auth/balance", ah.SetStartingBalance)
 			protected.POST("/auth/change-password", ah.ChangePassword)
+			protected.POST("/auth/resend-verification", ah.ResendVerification)
 
 			protected.POST("/order", oh.PlaceOrder)
 			protected.GET("/orders", oh.GetOrders)

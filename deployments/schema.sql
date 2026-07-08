@@ -73,3 +73,9 @@ CREATE INDEX idx_trades_symbol ON trades(symbol);
 CREATE INDEX idx_orders_user_status ON orders(user_id, status);
 CREATE INDEX idx_orders_symbol_status ON orders(symbol, status);
 CREATE INDEX idx_leveraged_user_open ON leveraged_positions(user_id, is_open);
+
+-- Email verification and password reset
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP WITH TIME ZONE;

@@ -116,7 +116,10 @@ export class InfrastructureStack extends cdk.Stack {
               DB_HOST: database.dbInstanceEndpointAddress,
               DB_PORT: database.dbInstanceEndpointPort,
               DB_NAME: 'tradego',
-              GEMINI_API_KEY: 'AIzaSyBOsBKCXjx9TSUHnbtBcWRQmQKYHFHnSn4',
+              CLAUDE_API_KEY: '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',
+              BASE_URL: 'https://trade-go.tech',
+              SES_ENABLED: 'true',
+              SES_FROM_EMAIL: 'noreply@trade-go.tech',
           },
           secrets: {
             DB_USER: ecs.Secret.fromSecretsManager(database.secret!, 'username'),
@@ -146,6 +149,14 @@ export class InfrastructureStack extends cdk.Stack {
       healthyHttpCodes: '200',
       interval: cdk.Duration.seconds(30),
     });
+
+    // ── SES permissions ──
+    fargateService.taskDefinition.taskRole?.addToPrincipalPolicy(
+      new cdk.aws_iam.PolicyStatement({
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+        resources: ['*'],
+      })
+    );
 
     // ── Outputs ──
     new cdk.CfnOutput(this, 'AppURL', {

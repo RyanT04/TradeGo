@@ -12,8 +12,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const geminiModel = "gemini-3-flash-preview"
-const geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent"
+const claudeModel = "claude-sonnet-4-6"
+const claudeURL = "https://api.anthropic.com/v1/messages"
+const claudeAPIVersion = "2023-06-01"
+
 const systemPrompt = `You are TradeGo Assistant, an AI tutor built into TradeGo — a cryptocurrency trading simulator.
 
 Your role:
@@ -32,33 +34,32 @@ TradeGo facts you know:
 - Every trade shows execution latency in microseconds.
 - Built with Go (backend) and React (frontend), deployed on AWS.`
 
-// geminiRequest / geminiResponse mirror the Gemini REST API structure.
-type geminiPart struct {
-	Text string `json:"text"`
+// Claude API request/response types.
+type claudeMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type geminiContent struct {
-	Role  string       `json:"role"`
-	Parts []geminiPart `json:"parts"`
+type claudeRequest struct {
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    string          `json:"system,omitempty"`
+	Messages  []claudeMessage `json:"messages"`
 }
 
-type geminiRequest struct {
-	SystemInstruction *geminiContent  `json:"system_instruction,omitempty"`
-	Contents          []geminiContent `json:"contents"`
-	GenerationConfig  *genConfig      `json:"generationConfig,omitempty"`
+type claudeContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }
 
-type genConfig struct {
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
-	Temperature     float64 `json:"temperature,omitempty"`
+type claudeResponse struct {
+	Content []claudeContentBlock `json:"content"`
+	Error   *claudeError         `json:"error,omitempty"`
 }
 
-type geminiCandidate struct {
-	Content geminiContent `json:"content"`
-}
-
-type geminiResponse struct {
-	Candidates []geminiCandidate `json:"candidates"`
+type claudeError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
 }
 
 // ChatRequest is what the frontend sends.
@@ -67,12 +68,12 @@ type ChatRequest struct {
 }
 
 type ChatMessage struct {
-	Role string `json:"role" binding:"required"` // "user" or "model"
+	Role string `json:"role" binding:"required"` // "user" or "model"/"assistant"
 	Text string `json:"text" binding:"required"`
 }
 
 func ChatHandler(c *gin.Context) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
+	apiKey := os.Getenv("CLAUDE_API_KEY")
 	if apiKey == "" {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat is not configured"})
 		return
@@ -89,42 +90,48 @@ func ChatHandler(c *gin.Context) {
 		return
 	}
 
-	// Build Gemini request with conversation history.
-	contents := make([]geminiContent, 0, len(req.Messages))
+	// Build Claude messages from conversation history.
+	messages := make([]claudeMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		role := m.Role
-		if role == "assistant" {
-			role = "model" // Gemini uses "model" not "assistant"
+		// Normalise role names — frontend may send "model" (Gemini legacy) or "assistant"
+		if role == "model" {
+			role = "assistant"
 		}
-		contents = append(contents, geminiContent{
-			Role:  role,
-			Parts: []geminiPart{{Text: m.Text}},
+		messages = append(messages, claudeMessage{
+			Role:    role,
+			Content: m.Text,
 		})
 	}
 
-	gemReq := geminiRequest{
-		SystemInstruction: &geminiContent{
-			Parts: []geminiPart{{Text: systemPrompt}},
-		},
-		Contents: contents,
-		GenerationConfig: &genConfig{
-			MaxOutputTokens: 1024,
-			Temperature:     0.7,
-		},
+	claudeReq := claudeRequest{
+		Model:     claudeModel,
+		MaxTokens: 1024,
+		System:    systemPrompt,
+		Messages:  messages,
 	}
 
-	body, err := json.Marshal(gemReq)
+	body, err := json.Marshal(claudeReq)
 	if err != nil {
 		log.Printf("chat: failed to marshal request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build request"})
 		return
 	}
 
-	// Call Gemini API.
-	url := geminiURL + "?key=" + apiKey
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	// Call Claude API.
+	httpReq, err := http.NewRequest("POST", claudeURL, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("chat: failed to call Gemini: %v", err)
+		log.Printf("chat: failed to create request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", apiKey)
+	httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		log.Printf("chat: failed to call Claude: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to reach AI service"})
 		return
 	}
@@ -132,31 +139,44 @@ func ChatHandler(c *gin.Context) {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("chat: failed to read Gemini response: %v", err)
+		log.Printf("chat: failed to read Claude response: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read AI response"})
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		log.Printf("chat: Gemini returned %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("chat: Claude returned %d: %s", resp.StatusCode, string(respBody))
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": fmt.Sprintf("AI service returned status %d", resp.StatusCode),
 		})
 		return
 	}
 
-	var gemResp geminiResponse
-	if err := json.Unmarshal(respBody, &gemResp); err != nil {
-		log.Printf("chat: failed to parse Gemini response: %v", err)
+	var claudeResp claudeResponse
+	if err := json.Unmarshal(respBody, &claudeResp); err != nil {
+		log.Printf("chat: failed to parse Claude response: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to parse AI response"})
 		return
 	}
 
-	if len(gemResp.Candidates) == 0 || len(gemResp.Candidates[0].Content.Parts) == 0 {
+	if claudeResp.Error != nil {
+		log.Printf("chat: Claude error: %s", claudeResp.Error.Message)
+		c.JSON(http.StatusBadGateway, gin.H{"error": claudeResp.Error.Message})
+		return
+	}
+
+	// Extract text from content blocks.
+	reply := ""
+	for _, block := range claudeResp.Content {
+		if block.Type == "text" {
+			reply += block.Text
+		}
+	}
+
+	if reply == "" {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "AI returned empty response"})
 		return
 	}
 
-	reply := gemResp.Candidates[0].Content.Parts[0].Text
 	c.JSON(http.StatusOK, gin.H{"reply": reply})
 }

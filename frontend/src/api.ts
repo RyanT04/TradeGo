@@ -110,3 +110,21 @@ export async function sendChat(messages: { role: string; text: string }[]) {
   const res = await api.post('/chat', { messages })
   return res.data
 }
+
+export async function forgotPassword(email: string) {
+  const { data } = await api.post('/auth/forgot-password', { email })
+  return data
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  const { data } = await api.post('/auth/reset-password', {
+    token,
+    new_password: newPassword,
+  })
+  return data
+}
+
+export async function resendVerification() {
+  const { data } = await api.post('/auth/resend-verification')
+  return data
+}

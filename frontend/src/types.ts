@@ -42,6 +42,8 @@ export interface Position {
 export interface User {
   username?: string
   avatar?: string
+  email_verified?: boolean
+  email?: string
 }
 
 export type View = 'trade' | 'markets' | 'settings'

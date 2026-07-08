@@ -18,6 +18,8 @@ import { MarketsView } from './views/MarketsView'
 import { SettingsView } from './views/SettingsView'
 import { PortfolioView } from './views/PortfolioView'
 import { ChatBubble } from './components/ChatBubble'
+import { VerificationBanner } from './components/VerificationBanner'
+import { ResetPasswordView } from './views/ResetPasswordView'
 
 import type { Ticker, Holding, TradeLog, Position, User } from './types'
 
@@ -57,6 +59,7 @@ function AppShell({ children, user, balance }: AppShellProps) {
             </span>
           )}
         </header>
+        {user && user.email_verified === false && <VerificationBanner email={user.email} />}
         <main className="flex-1 min-w-0">{children}</main>
       </div>
       <ChatBubble />
@@ -234,21 +237,45 @@ function App() {
         <Route path="/trade" element={
           isAuthed ? (
             <AppShell user={user} balance={balance}>
-              <TradeView
-                tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
-                interval={interval} setInterval={setInterval}
-                tradeMode={tradeMode} setTradeMode={setTradeMode}
-                tradeQty={tradeQty} setTradeQty={setTradeQty}
-                levDirection={levDirection} setLevDirection={setLevDirection}
-                levLeverage={levLeverage} setLevLeverage={setLevLeverage}
-                levMargin={levMargin} setLevMargin={setLevMargin}
-                holdings={holdings} trades={trades} openPositions={openPositions}
-                tab={tab} setTab={setTab} loading={loading}
-                handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
-                handleClosePosition={handleClosePosition}
-                favourites={favourites} toggleFavourite={toggleFavourite}
-                balance={balance}
-              />
+              {user && !user.email_verified ? (
+                <div className="flex-1 flex items-center justify-center p-6">
+                  <div className="text-center max-w-md">
+                    <div className="text-5xl mb-4">📧</div>
+                    <h2 className="text-2xl font-bold mb-3">Verify your email to start trading</h2>
+                    <p className="text-gray-400 mb-6">
+                      We sent a verification link to <span className="text-white font-mono">{user.email}</span>. 
+                      Click the link in your inbox to unlock trading.
+                    </p>
+                    <button onClick={async () => {
+                      try {
+                        const { resendVerification } = await import('./api')
+                        await resendVerification()
+                        alert('Verification email sent! Check your inbox.')
+                      } catch { alert('Failed to send. Try again later.') }
+                    }}
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+                      Resend verification email
+                    </button>
+                    <p className="text-xs text-gray-600 mt-4">Check your spam folder too</p>
+                  </div>
+                </div>
+              ) : (
+                <TradeView
+                  tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
+                  interval={interval} setInterval={setInterval}
+                  tradeMode={tradeMode} setTradeMode={setTradeMode}
+                  tradeQty={tradeQty} setTradeQty={setTradeQty}
+                  levDirection={levDirection} setLevDirection={setLevDirection}
+                  levLeverage={levLeverage} setLevLeverage={setLevLeverage}
+                  levMargin={levMargin} setLevMargin={setLevMargin}
+                  holdings={holdings} trades={trades} openPositions={openPositions}
+                  tab={tab} setTab={setTab} loading={loading}
+                  handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
+                  handleClosePosition={handleClosePosition}
+                  favourites={favourites} toggleFavourite={toggleFavourite}
+                  balance={balance}
+                />
+              )}
             </AppShell>
           ) : <Navigate to="/login" replace />
         } />
@@ -282,6 +309,7 @@ function App() {
           ) : <Navigate to="/login" replace />
         } />
 
+        <Route path="/reset-password" element={<ResetPasswordView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

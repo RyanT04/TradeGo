@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { sendChat } from '../api'
+import ReactMarkdown from 'react-markdown'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -67,7 +68,7 @@ export function ChatBubble() {
               <span className="text-lg">🤖</span>
               <div>
                 <div className="text-sm font-semibold text-white">TradeGo Assistant</div>
-                <div className="text-[10px] text-gray-500">Powered by Gemini</div>
+                <div className="text-[10px] text-gray-500">Powered by Claude</div>
               </div>
             </div>
             <button onClick={() => setOpen(false)}
@@ -85,12 +86,27 @@ export function ChatBubble() {
                     ? 'bg-emerald-600 text-white rounded-br-sm'
                     : 'bg-[#12121a] border border-[#1a1a25] text-gray-300 rounded-bl-sm'
                 }`}>
-                  {m.text.split('\n').map((line, j) => (
-                    <span key={j}>
-                      {line}
-                      {j < m.text.split('\n').length - 1 && <br />}
-                    </span>
-                  ))}
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      strong: ({ children }) => <span className="font-semibold text-white">{children}</span>,
+                      em: ({ children }) => <span className="italic text-gray-300">{children}</span>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+                      li: ({ children }) => <li>{children}</li>,
+                      code: ({ children }) => <code className="bg-[#0a0a0f] px-1 py-0.5 rounded text-emerald-400 text-xs">{children}</code>,
+                      pre: ({ children }) => <pre className="bg-[#0a0a0f] p-2 rounded-lg mb-2 overflow-x-auto text-xs">{children}</pre>,
+                      h1: ({ children }) => <p className="font-bold text-white text-base mb-1">{children}</p>,
+                      h2: ({ children }) => <p className="font-bold text-white mb-1">{children}</p>,
+                      h3: ({ children }) => <p className="font-semibold text-white mb-1">{children}</p>,
+                      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline hover:text-emerald-300">{children}</a>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-emerald-500 pl-3 text-gray-400 italic mb-2">{children}</blockquote>,
+                      hr: () => <hr className="border-[#1a1a25] my-2" />,
+                      table: ({ children }) => <table className="w-full text-xs mb-2 border-collapse">{children}</table>,
+                      th: ({ children }) => <th className="border border-[#1a1a25] px-2 py-1 text-left text-white bg-[#0a0a0f]">{children}</th>,
+                      td: ({ children }) => <td className="border border-[#1a1a25] px-2 py-1">{children}</td>,
+                    }}
+                  >{m.text}</ReactMarkdown>
                 </div>
               </div>
             ))}
