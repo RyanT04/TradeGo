@@ -93,10 +93,9 @@ func (s *Sender) SendPasswordResetEmail(toEmail, token, baseURL string) error {
 }
 
 func (s *Sender) send(to, subject, htmlBody, textBody string) error {
-	// If SES is not configured (local dev), just log the email
 	if s.client == nil {
 		log.Printf("email [DEV]: to=%s subject=%s", to, subject)
-		log.Printf("email [DEV]: would have sent HTML email")
+		log.Printf("email [DEV]: %s", textBody)
 		return nil
 	}
 
