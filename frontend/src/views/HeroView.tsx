@@ -22,8 +22,8 @@ const features = [
     body: 'Buy and hold like a normal exchange, or open 2x–50x long or short positions with automatic liquidation when margin runs out.',
   },
   {
-    title: 'AWS production stack',
-    body: 'Deployed to ECS Fargate behind an Application Load Balancer with PostgreSQL on RDS. Real cloud infrastructure, not a single VM.',
+    title: 'Containerised deployment',
+    body: 'Docker Compose runs the Go service alongside a private Postgres instance, behind an Nginx reverse proxy with Let\'s Encrypt TLS. Previously on AWS ECS Fargate — migrated to cut running cost.',
   },
   {
     title: 'Latency profiling built in',
@@ -60,7 +60,7 @@ const steps = [
 
 const techBadges = [
   { name: 'Go', desc: 'Backend language' },
-  { name: 'AWS', desc: 'Fargate + RDS' },
+  { name: 'Docker', desc: 'Compose + Nginx' },
   { name: 'PostgreSQL', desc: 'Database' },
   { name: 'React', desc: 'Frontend' },
   { name: 'Bybit', desc: 'Market data' },
@@ -86,7 +86,7 @@ export function HeroView() {
           Crypto trading at <span className="text-emerald-400">Go speed</span>.
         </h1>
         <p className="mt-6 text-lg text-gray-400 max-w-2xl mx-auto">
-          A high-performance crypto trading simulator built in Go and deployed on AWS.
+          A high-performance crypto trading simulator built in Go.
           460+ live coins, microsecond-precision latency profiling, and zero risk to your real money.
         </p>
         <div className="mt-10 flex items-center justify-center gap-3">

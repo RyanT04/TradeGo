@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 const techStack = [
   { tag: 'Backend', items: ['Go 1.25', 'Gin HTTP', 'pgx (PostgreSQL)', 'gorilla/websocket', 'JWT + bcrypt'] },
   { tag: 'Frontend', items: ['React 18', 'TypeScript', 'Vite', 'Tailwind CSS', 'lightweight-charts', 'react-router-dom'] },
-  { tag: 'Infrastructure', items: ['AWS ECS Fargate', 'AWS RDS PostgreSQL', 'AWS CDK (TypeScript)', 'Application Load Balancer', 'Secrets Manager + CloudWatch'] },
+  { tag: 'Infrastructure', items: ['DigitalOcean Droplet', 'Docker Compose', 'PostgreSQL 15 (containerised)', 'Nginx reverse proxy', 'Let\'s Encrypt TLS'] },
   { tag: 'Market data', items: ['Bybit V5 WebSocket', 'Bybit V5 REST', '460+ USDT pairs', 'In-memory ticker cache', 'Tick-by-tick candle updates'] },
 ]
 
@@ -13,7 +13,7 @@ const features = [
   { title: 'Leveraged positions', body: '2x–50x long or short positions with isolated margin and a background liquidation worker that runs every two seconds.' },
   { title: 'Per-trade latency', body: 'Every trade returns execution latency in microseconds. The frontend renders min, max, and average across the live session.' },
   { title: 'Persistent state', body: 'PostgreSQL stores users, holdings, trades, orders, leveraged positions, and favourites. Schema migrations run automatically on container start.' },
-  { title: 'Cloud deployment', body: 'A single `cdk deploy` provisions the entire stack: VPC with private subnets, RDS, Fargate service, ALB, secrets, and logs.' },
+  { title: 'Single-command deployment', body: 'One `docker compose up` brings up the whole stack: the Go service, a containerised Postgres with the schema applied on first boot, and health-gated startup ordering.' },
   { title: 'Hot + cold market data', body: '20 active coins streamed via WebSocket for sub-second updates, the remaining 440+ via REST polling every 5 seconds.' },
   { title: 'Portfolio reset', body: 'Blow up your account? One click in Settings rolls everything back with a fresh balance of your choice.' },
 ]
@@ -49,7 +49,7 @@ const faqs = [
   },
   {
     q: 'Is my data safe?',
-    a: 'Passwords are hashed with bcrypt before storage. Authentication uses signed JWTs. The database lives inside a private VPC subnet on AWS, only reachable by the application container. Connections to the database use credentials stored in AWS Secrets Manager, never in code.',
+    a: 'Passwords are hashed with bcrypt before storage. Authentication uses signed JWTs. The database runs in a container on a private Docker network, not exposed to the public internet, with credentials supplied through environment variables rather than committed to code.',
   },
 ]
 
@@ -65,28 +65,55 @@ export function AboutView() {
           so users can practise trading strategies without risking real money.
         </p>
         <p className="text-gray-400 text-lg leading-relaxed">
-          Under the hood, it's a high-performance Go backend deployed on AWS — designed for low-latency trade execution
-          and built to be measured. Every trade reports its end-to-end latency, every metric is observable, every component
-          chosen for predictable performance.
+          Under the hood, it's a high-performance Go backend running on a self-managed DigitalOcean droplet — designed
+          for low-latency trade execution and built to be measured. Every trade reports its end-to-end latency, every
+          metric is observable, every component chosen for predictable performance.
         </p>
       </section>
 
       {/* Performance focus */}
       <section className="max-w-3xl mx-auto px-6 pb-16">
-        <h2 className="text-2xl font-bold mb-6">Why Go and AWS?</h2>
+        <h2 className="text-2xl font-bold mb-6">Why Go?</h2>
         <div className="bg-[#12121a] border border-[#1a1a25] rounded-xl p-6 space-y-4 text-gray-400 leading-relaxed">
           <p>
             Most modern web apps run on JavaScript-first stacks chosen for developer speed.
             That works — but at scale, runtime overhead, cold starts, and request multiplexing all start to matter.
           </p>
           <p>
-            TradeGo takes the opposite approach. The backend is a compiled Go binary running in a single Fargate task.
+            TradeGo takes the opposite approach. The backend is a compiled Go binary running in a Docker container.
             Goroutines handle concurrent traders, the matching engine runs in-process, and a long-lived WebSocket
-            keeps prices fresh in memory. PostgreSQL on RDS handles persistence, with the schema applied automatically
-            on container start.
+            keeps prices fresh in memory. A containerised PostgreSQL handles persistence, with the schema applied
+            automatically on container start.
           </p>
           <p>
-            The result: simple deployment, predictable latency, and full observability through CloudWatch logs.
+            The result: simple deployment, predictable latency, and full observability through container logs.
+          </p>
+        </div>
+      </section>
+
+      {/* Migration */}
+      <section className="max-w-3xl mx-auto px-6 pb-16">
+        <h2 className="text-2xl font-bold mb-6">From AWS to DigitalOcean</h2>
+        <div className="bg-[#12121a] border border-[#1a1a25] rounded-xl p-6 space-y-4 text-gray-400 leading-relaxed">
+          <p>
+            TradeGo originally ran on AWS: an ECS Fargate service behind an Application Load Balancer, PostgreSQL on
+            RDS inside a private VPC subnet, secrets in Secrets Manager, and the whole stack provisioned from a single
+            <code className="text-gray-300"> cdk deploy </code> with AWS CDK in TypeScript. That infrastructure code is
+            still in the repository.
+          </p>
+          <p>
+            The architecture worked. But for a project at this scale, the managed-service overhead wasn't earning its
+            running cost — a load balancer, a managed database instance, and the surrounding networking charges add up
+            quickly for a system with modest traffic.
+          </p>
+          <p>
+            TradeGo now runs on a single DigitalOcean droplet. Docker Compose brings up the Go service alongside a
+            containerised Postgres, with Nginx as a reverse proxy and TLS via Let's Encrypt. Same application,
+            substantially lower running cost, and more direct control over the deployment.
+          </p>
+          <p>
+            The tradeoff is explicit: managed services buy resilience and automated failover, and a single droplet
+            doesn't. For a simulator with no real money at stake, that's a reasonable trade.
           </p>
         </div>
       </section>
@@ -127,10 +154,10 @@ export function AboutView() {
       <section className="max-w-3xl mx-auto px-6 pb-16">
         <h2 className="text-2xl font-bold mb-6">Architecture</h2>
         <div className="bg-[#12121a] border border-[#1a1a25] rounded-xl p-6 font-mono text-xs text-gray-400 leading-relaxed overflow-x-auto">
-          <pre>{`Browser ─→ AWS ALB (HTTP)
+          <pre>{`Browser ─→ Nginx (TLS, reverse proxy)
             │
             ▼
-         ECS Fargate
+      Docker Compose
         ┌────────────────────────────────┐
         │  Go server (Gin)               │
         │  ├─ JWT auth + bcrypt          │
@@ -141,8 +168,8 @@ export function AboutView() {
         └─────────┬─────────────┬────────┘
                   │             │
                   ▼             ▼
-           AWS RDS (PG)    Bybit V5 WS+REST
-            (private VNet) (live prices)`}</pre>
+          PostgreSQL 15    Bybit V5 WS+REST
+        (private network)  (live prices)`}</pre>
         </div>
       </section>
 
