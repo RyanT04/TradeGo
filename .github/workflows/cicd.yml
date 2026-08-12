@@ -62,9 +62,14 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
+      # The docker build produces no output for long stretches while Go
+      # compiles, which can look like an idle connection and get dropped.
+      # ServerAliveInterval sends a keepalive every 30s to prevent that.
       - name: Pull and rebuild on droplet
         run: |
           ssh -i ~/.ssh/deploy_key \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             'set -e
              cd /root/TradeGo
@@ -76,6 +81,8 @@ jobs:
       - name: Verify the service is healthy
         run: |
           ssh -i ~/.ssh/deploy_key \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             'set -e
              for i in $(seq 1 20); do
