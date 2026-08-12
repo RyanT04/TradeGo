@@ -1,9 +1,12 @@
 package matching
 
 import (
+	"errors"
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/RyanT04/TradeGo/internal/database"
 )
 
 // StartLiquidationWorker runs a background goroutine that continuously checks
@@ -23,6 +26,15 @@ func (e *Engine) liquidationLoop() {
 	}
 }
 
+// shouldLiquidate reports whether a position has crossed its liquidation price.
+// Split out from checkLiquidations so it can be tested directly.
+func shouldLiquidate(direction string, price, liquidationPrice float64) bool {
+	if direction == "LONG" {
+		return price <= liquidationPrice
+	}
+	return price >= liquidationPrice
+}
+
 func (e *Engine) checkLiquidations() {
 	positions, err := e.db.GetAllOpenPositions()
 	if err != nil {
@@ -40,23 +52,23 @@ func (e *Engine) checkLiquidations() {
 			continue
 		}
 
-		liquidated := false
-		if pos.Direction == "LONG" && price <= pos.LiquidationPrice {
-			liquidated = true
-		} else if pos.Direction == "SHORT" && price >= pos.LiquidationPrice {
-			liquidated = true
+		if !shouldLiquidate(pos.Direction, price, pos.LiquidationPrice) {
+			continue
 		}
 
-		if liquidated {
-			// Liquidated = lose 100% of margin (pnl = -marginUSD)
-			pnl := -pos.MarginUSD
-			if err := e.db.ClosePosition(pos.ID, price, pnl); err != nil {
-				log.Printf("liquidation worker: failed to close position %s: %v", pos.ID, err)
+		// LiquidatePosition re-checks is_open under a row lock. If the user
+		// closed the position between our read and this call, it returns
+		// ErrPositionNotFound and we skip quietly rather than double-closing.
+		if err := e.db.LiquidatePosition(pos.ID, price); err != nil {
+			if errors.Is(err, database.ErrPositionNotFound) {
 				continue
 			}
-			// No margin returned — user loses the whole margin
-			log.Printf("LIQUIDATED: %s %s %dx @ %.2f (entry %.2f, liq %.2f, loss $%.2f)",
-				pos.UserID[:8], pos.Symbol, pos.Leverage, price, pos.EntryPrice, pos.LiquidationPrice, pos.MarginUSD)
+			log.Printf("liquidation worker: failed to close position %s: %v", pos.ID, err)
+			continue
 		}
+
+		log.Printf("LIQUIDATED: %s %s %dx @ %.2f (entry %.2f, liq %.2f, loss $%.2f)",
+			shortID(pos.UserID), pos.Symbol, pos.Leverage, price,
+			pos.EntryPrice, pos.LiquidationPrice, pos.MarginUSD)
 	}
 }

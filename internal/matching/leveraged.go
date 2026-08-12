@@ -1,19 +1,16 @@
 package matching
 
 import (
-	"context"
 	"fmt"
-	"strconv"
+	"math"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/RyanT04/TradeGo/internal/database"
 )
 
 // calculateLiquidationPrice returns the price at which a leveraged position
 // would lose 100% of its margin.
-// For LONG: liquidation = entry × (1 - 1/leverage)
+// For LONG:  liquidation = entry × (1 - 1/leverage)
 // For SHORT: liquidation = entry × (1 + 1/leverage)
 func calculateLiquidationPrice(direction string, entryPrice float64, leverage int) float64 {
 	lev := float64(leverage)
@@ -23,10 +20,14 @@ func calculateLiquidationPrice(direction string, entryPrice float64, leverage in
 	return entryPrice * (1 + 1/lev)
 }
 
-// calculatePnL returns the profit/loss in USD for a leveraged position at current price.
-// For LONG: pnl = size × ((current - entry) / entry)
+// calculatePnL returns the profit/loss in USD for a leveraged position at the
+// current price.
+// For LONG:  pnl = size × ((current - entry) / entry)
 // For SHORT: pnl = size × ((entry - current) / entry)
 func calculatePnL(direction string, entryPrice, currentPrice, sizeUSD float64) float64 {
+	if entryPrice == 0 {
+		return 0
+	}
 	if direction == "LONG" {
 		return sizeUSD * ((currentPrice - entryPrice) / entryPrice)
 	}
@@ -53,52 +54,26 @@ func (e *Engine) OpenLeveragedPosition(userID, symbol, direction string, leverag
 	if leverage < 2 || leverage > 50 {
 		return nil, fmt.Errorf("leverage must be between 2x and 50x")
 	}
-	if marginUSD <= 0 {
-		return nil, fmt.Errorf("margin must be positive")
+	if math.IsNaN(marginUSD) || math.IsInf(marginUSD, 0) || marginUSD <= 0 {
+		return nil, fmt.Errorf("margin must be a positive, finite number")
 	}
 
-	// Get live price
-	ticker := e.bybit.GetTicker(symbol)
-	if ticker == nil {
-		return nil, fmt.Errorf("no price data for %s", symbol)
-	}
-	entryPrice, err := strconv.ParseFloat(ticker.Price, 64)
+	entryPrice, err := e.priceFor(symbol)
 	if err != nil {
-		return nil, fmt.Errorf("invalid price: %w", err)
-	}
-
-	// Check user has enough balance for margin
-	user, err := e.db.GetUserByID(userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-	if user.Balance < marginUSD {
-		return nil, fmt.Errorf("insufficient balance: have %.2f, need %.2f", user.Balance, marginUSD)
+		return nil, err
 	}
 
 	sizeUSD := marginUSD * float64(leverage)
 	liquidationPrice := calculateLiquidationPrice(direction, entryPrice, leverage)
 
-	// Deduct margin + create position concurrently
-	g, _ := errgroup.WithContext(context.Background())
-
-	g.Go(func() error {
-		return e.db.UpdateBalance(userID, -marginUSD)
-	})
-
-	var position *database.LeveragedPosition
-	g.Go(func() error {
-		p, err := e.db.OpenLeveragedPosition(userID, symbol, direction, leverage,
-			entryPrice, sizeUSD, marginUSD, liquidationPrice)
-		if err != nil {
-			return err
-		}
-		position = p
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to open position: %w", err)
+	// Balance check, margin debit, and position insert happen in one
+	// transaction with the user row locked.
+	position, err := e.db.OpenLeveragedPositionTx(
+		userID, symbol, direction, leverage,
+		entryPrice, sizeUSD, marginUSD, liquidationPrice,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LeveragedOpenResult{
@@ -110,7 +85,6 @@ func (e *Engine) OpenLeveragedPosition(userID, symbol, direction string, leverag
 func (e *Engine) CloseLeveragedPosition(userID, positionID string) (*LeveragedCloseResult, error) {
 	start := time.Now()
 
-	// Get the position to close
 	positions, err := e.db.GetOpenPositions(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
@@ -124,44 +98,26 @@ func (e *Engine) CloseLeveragedPosition(userID, positionID string) (*LeveragedCl
 		}
 	}
 	if pos == nil {
-		return nil, fmt.Errorf("position not found or already closed")
+		return nil, database.ErrPositionNotFound
 	}
 
-	// Get live price
-	ticker := e.bybit.GetTicker(pos.Symbol)
-	if ticker == nil {
-		return nil, fmt.Errorf("no price data for %s", pos.Symbol)
-	}
-	closePrice, err := strconv.ParseFloat(ticker.Price, 64)
+	closePrice, err := e.priceFor(pos.Symbol)
 	if err != nil {
-		return nil, fmt.Errorf("invalid price: %w", err)
+		return nil, err
 	}
 
 	pnl := calculatePnL(pos.Direction, pos.EntryPrice, closePrice, pos.SizeUSD)
-	returnAmount := pos.MarginUSD + pnl // margin comes back, plus or minus pnl
 
-	// Close position + credit user concurrently
-	g, _ := errgroup.WithContext(context.Background())
-
-	g.Go(func() error {
-		return e.db.ClosePosition(positionID, closePrice, pnl)
-	})
-
-	g.Go(func() error {
-		return e.db.UpdateBalance(userID, returnAmount)
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to close position: %w", err)
+	// The store re-checks is_open under a row lock and returns
+	// ErrPositionNotFound if the liquidation worker got there first — so a
+	// liquidated position can't also be refunded.
+	updated, err := e.db.CloseLeveragedPositionTx(userID, positionID, closePrice, pnl)
+	if err != nil {
+		return nil, err
 	}
 
-	// Refresh for response
-	pos.IsOpen = false
-	pos.ClosePrice = &closePrice
-	pos.PnL = &pnl
-
 	return &LeveragedCloseResult{
-		Position: pos,
+		Position: updated,
 		PnL:      pnl,
 		Latency:  time.Since(start),
 	}, nil
