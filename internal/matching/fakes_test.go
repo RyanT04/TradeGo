@@ -20,8 +20,8 @@ import (
 type fakeStore struct {
 	mu sync.Mutex
 
-	balances  map[string]float64            // userID -> balance
-	holdings  map[string]float64            // userID|symbol -> quantity
+	balances  map[string]float64 // userID -> balance
+	holdings  map[string]float64 // userID|symbol -> quantity
 	positions map[string]*database.LeveragedPosition
 
 	nextID int
