@@ -2,14 +2,25 @@ import { useState } from 'react'
 import { setToken, login, register, updateProfile, setStartingBalance, forgotPassword } from '../api'
 import { AVATARS } from '../constants'
 
+type Step = 'auth' | 'verify' | 'profile' | 'balance' | 'forgot'
+
 interface AuthScreenProps {
   onComplete: (token: string, isNewUser: boolean) => void
   initialMode?: 'login' | 'register'
+  // Lets an already-authenticated user be dropped straight into the middle of
+  // the flow, e.g. after clicking an email verification link.
+  initialStep?: Step
+  existingToken?: string
 }
 
-export function AuthScreen({ onComplete, initialMode = 'register' }: AuthScreenProps) {
-  const [step, setStep] = useState<'auth' | 'verify' | 'profile' | 'balance' | 'forgot'>('auth')
-  const [token, setLocalToken] = useState('')
+export function AuthScreen({
+  onComplete,
+  initialMode = 'register',
+  initialStep = 'auth',
+  existingToken = '',
+}: AuthScreenProps) {
+  const [step, setStep] = useState<Step>(initialStep)
+  const [token, setLocalToken] = useState(existingToken)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')

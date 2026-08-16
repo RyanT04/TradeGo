@@ -141,6 +141,17 @@ function App() {
       navigate(isNewUser ? '/about' : '/trade')
   }
 
+  // Called when an already-authenticated user finishes the profile and balance
+  // steps (e.g. after arriving from an email verification link). The token
+  // hasn't changed, so the token effect won't refire — refresh the user record
+  // explicitly, otherwise `onboarded` stays stale and they loop back here.
+  async function finishOnboarding() {
+    await fetchData()
+    localStorage.removeItem(WELCOME_KEY)
+    setShowWelcome(true)
+    navigate('/about')
+  }
+
   function handleLogout() {
     localStorage.removeItem('token')
     clearToken(); setTokenState(''); setUser(null)
@@ -207,6 +218,10 @@ function App() {
   }
 
   const isAuthed = !!token
+  // Signed in, but profile setup and starting balance were never completed.
+  // Happens when a user arrives via the email verification link, which lands
+  // on /trade and bypasses the registration flow entirely.
+  const needsOnboarding = !!user && !user.onboarded
 
   return (
     <>
@@ -236,47 +251,57 @@ function App() {
 
         <Route path="/trade" element={
           isAuthed ? (
-            <AppShell user={user} balance={balance}>
-              {user && !user.email_verified ? (
-                <div className="flex-1 flex items-center justify-center p-6">
-                  <div className="text-center max-w-md">
-                    <div className="text-5xl mb-4">📧</div>
-                    <h2 className="text-2xl font-bold mb-3">Verify your email to start trading</h2>
-                    <p className="text-gray-400 mb-6">
-                      We sent a verification link to <span className="text-white font-mono">{user.email}</span>. 
-                      Click the link in your inbox to unlock trading.
-                    </p>
-                    <button onClick={async () => {
-                      try {
-                        const { resendVerification } = await import('./api')
-                        await resendVerification()
-                        alert('Verification email sent! Check your inbox.')
-                      } catch { alert('Failed to send. Try again later.') }
-                    }}
-                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
-                      Resend verification email
-                    </button>
-                    <p className="text-xs text-gray-600 mt-4">Check your spam folder too</p>
+            needsOnboarding ? (
+              // Rendered outside AppShell: the onboarding steps are full-screen
+              // layouts and would sit awkwardly inside the sidebar chrome.
+              <AuthScreen
+                onComplete={finishOnboarding}
+                initialStep="profile"
+                existingToken={token}
+              />
+            ) : (
+              <AppShell user={user} balance={balance}>
+                {user && !user.email_verified ? (
+                  <div className="flex-1 flex items-center justify-center p-6">
+                    <div className="text-center max-w-md">
+                      <div className="text-5xl mb-4">📧</div>
+                      <h2 className="text-2xl font-bold mb-3">Verify your email to start trading</h2>
+                      <p className="text-gray-400 mb-6">
+                        We sent a verification link to <span className="text-white font-mono">{user.email}</span>.
+                        Click the link in your inbox to unlock trading.
+                      </p>
+                      <button onClick={async () => {
+                        try {
+                          const { resendVerification } = await import('./api')
+                          await resendVerification()
+                          alert('Verification email sent! Check your inbox.')
+                        } catch { alert('Failed to send. Try again later.') }
+                      }}
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition">
+                        Resend verification email
+                      </button>
+                      <p className="text-xs text-gray-600 mt-4">Check your spam folder too</p>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <TradeView
-                  tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
-                  interval={interval} setInterval={setInterval}
-                  tradeMode={tradeMode} setTradeMode={setTradeMode}
-                  tradeQty={tradeQty} setTradeQty={setTradeQty}
-                  levDirection={levDirection} setLevDirection={setLevDirection}
-                  levLeverage={levLeverage} setLevLeverage={setLevLeverage}
-                  levMargin={levMargin} setLevMargin={setLevMargin}
-                  holdings={holdings} trades={trades} openPositions={openPositions}
-                  tab={tab} setTab={setTab} loading={loading}
-                  handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
-                  handleClosePosition={handleClosePosition}
-                  favourites={favourites} toggleFavourite={toggleFavourite}
-                  balance={balance}
-                />
-              )}
-            </AppShell>
+                ) : (
+                  <TradeView
+                    tickers={tickers} selectedSymbol={selectedSymbol} setSelectedSymbol={setSelectedSymbol}
+                    interval={interval} setInterval={setInterval}
+                    tradeMode={tradeMode} setTradeMode={setTradeMode}
+                    tradeQty={tradeQty} setTradeQty={setTradeQty}
+                    levDirection={levDirection} setLevDirection={setLevDirection}
+                    levLeverage={levLeverage} setLevLeverage={setLevLeverage}
+                    levMargin={levMargin} setLevMargin={setLevMargin}
+                    holdings={holdings} trades={trades} openPositions={openPositions}
+                    tab={tab} setTab={setTab} loading={loading}
+                    handleSpotTrade={handleSpotTrade} handleLeveragedOpen={handleLeveragedOpen}
+                    handleClosePosition={handleClosePosition}
+                    favourites={favourites} toggleFavourite={toggleFavourite}
+                    balance={balance}
+                  />
+                )}
+              </AppShell>
+            )
           ) : <Navigate to="/login" replace />
         } />
 

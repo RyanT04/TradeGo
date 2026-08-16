@@ -44,6 +44,7 @@ export interface User {
   avatar?: string
   email_verified?: boolean
   email?: string
+  onboarded?: boolean
 }
 
 export type View = 'trade' | 'markets' | 'settings'
