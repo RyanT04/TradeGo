@@ -260,7 +260,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	// Redirect into the app. If the user hasn't finished profile setup and
 	// balance selection, the frontend routes them into onboarding from here.
-	c.Redirect(http.StatusFound, baseURL()+"/trade?verified=1")
+	c.Redirect(http.StatusFound, baseURL()+"/verified")
 }
 
 // ResendVerification handles POST /api/auth/resend-verification (protected)

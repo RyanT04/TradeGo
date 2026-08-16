@@ -20,6 +20,7 @@ import { PortfolioView } from './views/PortfolioView'
 import { ChatBubble } from './components/ChatBubble'
 import { VerificationBanner } from './components/VerificationBanner'
 import { ResetPasswordView } from './views/ResetPasswordView'
+import { VerifiedView } from './views/VerifiedView'
 
 import type { Ticker, Holding, TradeLog, Position, User } from './types'
 
@@ -334,8 +335,8 @@ function App() {
           ) : <Navigate to="/login" replace />
         } />
 
+        <Route path="/verified" element={<VerifiedView isAuthed={isAuthed} />} />
         <Route path="/reset-password" element={<ResetPasswordView />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   )
