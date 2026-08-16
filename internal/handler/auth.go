@@ -258,14 +258,11 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	log.Printf("email verified: user %s (%s)", user.ID, user.Email)
 
-	// Users who haven't completed profile setup and balance selection go to
-	// onboarding; everyone else lands on the trade view.
-	destination := "/trade?verified=1"
-	if !user.Onboarded {
-		destination = "/onboarding?verified=1"
-	}
-	c.Redirect(http.StatusFound, baseURL()+destination)
-	
+	// Redirect into the app. If the user hasn't finished profile setup and
+	// balance selection, the frontend routes them into onboarding from here.
+	c.Redirect(http.StatusFound, baseURL()+"/trade?verified=1")
+}
+
 // ResendVerification handles POST /api/auth/resend-verification (protected)
 // Generates a new token and resends the verification email.
 func (h *AuthHandler) ResendVerification(c *gin.Context) {
