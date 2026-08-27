@@ -25,6 +25,7 @@ const upsertHoldingSQL = `
 	VALUES ($1, $2, $3, $4)
 	ON CONFLICT (user_id, symbol) DO UPDATE SET
 	  avg_buy_price = CASE
+	    WHEN $3 <= 0 THEN holdings.avg_buy_price
 	    WHEN holdings.quantity + $3 > 0 THEN
 	      (holdings.quantity * holdings.avg_buy_price + $3 * $4) / (holdings.quantity + $3)
 	    ELSE 0
